@@ -1,0 +1,1126 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Caracterización Estudiantil</title>
+  <link rel="icon" href="data:,"/>
+  <!-- React -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <!-- XLSX -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <!-- Recharts (requires prop-types as a peer global) -->
+  <script src="https://unpkg.com/prop-types@15/prop-types.min.js"></script>
+  <script src="https://unpkg.com/recharts@2.8.0/umd/Recharts.js"></script>
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <!-- Tailwind al final para no bloquear render -->
+  <script src="https://cdn.tailwindcss.com/3.4.1"></script>
+  <style>
+    body{margin:0;padding:0;font-family:system-ui,sans-serif;}
+    *{box-sizing:border-box;}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+// ═══════════════════════════════════════════
+// CONFIGURACIÓN FIREBASE
+// ═══════════════════════════════════════════
+// ============================================================
+// 👉 PEGA AQUÍ el firebaseConfig de la institución nueva.
+// Lo obtienes en: Firebase Console → ⚙️ Configuración del proyecto
+// → General → tus apps → app web → "Configuración del SDK"
+// ============================================================
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDxh_kHG5LR51rht-QX4foCACjLt7AkV0E",
+  authDomain: "iedsantamariamonteria.firebaseapp.com",
+  projectId: "iedsantamariamonteria",
+  storageBucket: "iedsantamariamonteria.firebasestorage.app",
+  messagingSenderId: "681212863940",
+  appId: "1:681212863940:web:4fa014de1c795fd2a1f091"
+};
+// ============================================================
+
+let db = null;
+let studentsCol = null;
+try {
+  if (typeof firebase !== "undefined") {
+    firebase.initializeApp(FIREBASE_CONFIG);
+    db = firebase.firestore();
+    studentsCol = db.collection('estudiantes'); // 1 documento por estudiante (evita colisiones entre usuarios)
+    console.log("✅ Firebase conectado correctamente");
+  } else {
+    console.warn("⚠️ Firebase no disponible, usando localStorage");
+  }
+} catch(e) { console.error("Firebase error:", e); }
+
+const appStorage = {
+  get: async (key) => {
+    if (db) {
+      try { const s = await db.collection('app_data').doc(key).get(); return s.exists ? {value: s.data().value} : null; }
+      catch(e) { console.error(e); return null; }
+    }
+    try { const v = localStorage.getItem('inedisav_'+key); return v ? {value:v} : null; } catch { return null; }
+  },
+  set: async (key, val) => {
+    if (db) {
+      try { await db.collection('app_data').doc(key).set({value: val}); return {key,value:val}; }
+      catch(e) { console.error(e); return null; }
+    }
+    try { localStorage.setItem('inedisav_'+key, val); return {key,value:val}; } catch { return null; }
+  }
+};
+
+// ═══════════════════════════════════════════
+// SHORTCUTS
+// ═══════════════════════════════════════════
+const {useState,useEffect,useRef,createElement:h} = React;
+const {BarChart,Bar,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveContainer,LabelList} = Recharts;
+
+// ═══════════════════════════════════════════
+// ICONOS SVG INLINE
+// ═══════════════════════════════════════════
+const Icon = ({d,size=16,stroke="#current",fill="none"}) =>
+  h('svg',{width:size,height:size,viewBox:"0 0 24 24",fill,stroke:"currentColor",strokeWidth:2,strokeLinecap:"round",strokeLinejoin:"round"},
+    h('path',{d}));
+
+const Icons = {
+  Search: ()=>h('svg',{width:16,height:16,viewBox:"0 0 24 24",fill:"none",stroke:"currentColor",strokeWidth:2},h('circle',{cx:11,cy:11,r:8}),h('line',{x1:21,y1:21,x2:16.65,y2:16.65})),
+  Plus: ()=>h('svg',{width:16,height:16,viewBox:"0 0 24 24",fill:"none",stroke:"currentColor",strokeWidth:2},h('line',{x1:12,y1:5,x2:12,y2:19}),h('line',{x1:5,y1:12,x2:19,y2:12})),
+  Download: ()=>h('svg',{width:16,height:16,viewBox:"0 0 24 24",fill:"none",stroke:"currentColor",strokeWidth:2},h('path',{d:"M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"}),h('polyline',{points:"7 10 12 15 17 10"}),h('line',{x1:12,y1:15,x2:12,y2:3})),
+  Upload: ()=>h('svg',{width:16,height:16,viewBox:"0 0 24 24",fill:"none",stroke:"currentColor",strokeWidth:2},h('path',{d:"M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"}),h('polyline',{points:"17 8 12 3 7 8"}),h('line',{x1:12,y1:3,x2:12,y2:15})),
+  Trash: ()=>h('svg',{width:16,height:16,viewBox:"0 0 24 24",fill:"none",stroke:"currentColor",strokeWidth:2},h('polyline',{points:"3 6 5 6 21 6"}),h('path',{d:"M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"}),h('path',{d:"M10 11v6"}),h('path',{d:"M14 11v6"}),h('path',{d:"M9 6V4h6v2"})),
+  Edit: ()=>h('svg',{width:16,height:16,viewBox:"0 0 24 24",fill:"none",stroke:"currentColor",strokeWidth:2},h('path',{d:"M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"}),h('path',{d:"M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"})),
+  Eye: ()=>h('svg',{width:16,height:16,viewBox:"0 0 24 24",fill:"none",stroke:"currentColor",strokeWidth:2},h('path',{d:"M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"}),h('circle',{cx:12,cy:12,r:3})),
+  X: ()=>h('svg',{width:18,height:18,viewBox:"0 0 24 24",fill:"none",stroke:"currentColor",strokeWidth:2},h('line',{x1:18,y1:6,x2:6,y2:18}),h('line',{x1:6,y1:6,x2:18,y2:18})),
+  Save: ()=>h('svg',{width:16,height:16,viewBox:"0 0 24 24",fill:"none",stroke:"currentColor",strokeWidth:2},h('path',{d:"M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"}),h('polyline',{points:"17 21 17 13 7 13 7 21"}),h('polyline',{points:"7 3 7 8 15 8"})),
+  ChevL: ()=>h('svg',{width:16,height:16,viewBox:"0 0 24 24",fill:"none",stroke:"currentColor",strokeWidth:2},h('polyline',{points:"15 18 9 12 15 6"})),
+  ChevR: ()=>h('svg',{width:16,height:16,viewBox:"0 0 24 24",fill:"none",stroke:"currentColor",strokeWidth:2},h('polyline',{points:"9 18 15 12 9 6"})),
+  Settings: ()=>h('svg',{width:18,height:18,viewBox:"0 0 24 24",fill:"none",stroke:"currentColor",strokeWidth:2},h('circle',{cx:12,cy:12,r:3}),h('path',{d:"M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"})),
+  User: ()=>h('svg',{width:14,height:14,viewBox:"0 0 24 24",fill:"none",stroke:"currentColor",strokeWidth:2},h('path',{d:"M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"}),h('circle',{cx:12,cy:7,r:4})),
+  Lock: ()=>h('svg',{width:12,height:12,viewBox:"0 0 24 24",fill:"none",stroke:"currentColor",strokeWidth:2},h('rect',{x:3,y:11,width:18,height:11,rx:2,ry:2}),h('path',{d:"M7 11V7a5 5 0 0110 0v4"})),
+  File: ()=>h('svg',{width:16,height:16,viewBox:"0 0 24 24",fill:"none",stroke:"currentColor",strokeWidth:2},h('path',{d:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"}),h('polyline',{points:"14 2 14 8 20 8"})),
+  Print: ()=>h('svg',{width:16,height:16,viewBox:"0 0 24 24",fill:"none",stroke:"currentColor",strokeWidth:2},h('polyline',{points:"6 9 6 2 18 2 18 9"}),h('path',{d:"M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"}),h('rect',{x:6,y:14,width:12,height:8})),
+  Grad: ()=>h('svg',{width:24,height:24,viewBox:"0 0 24 24",fill:"none",stroke:"currentColor",strokeWidth:2},h('path',{d:"M22 10v6M2 10l10-5 10 5-10 5z"}),h('path',{d:"M6 12v5c3 3 9 3 12 0v-5"})),
+  Key: ()=>h('svg',{width:18,height:18,viewBox:"0 0 24 24",fill:"none",stroke:"currentColor",strokeWidth:2},h('path',{d:"M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"})),
+  Spin: ()=>h('svg',{width:20,height:20,viewBox:"0 0 24 24",fill:"none",stroke:"currentColor",strokeWidth:2,style:{animation:"spin 1s linear infinite"}},h('path',{d:"M21 12a9 9 0 11-6.219-8.56"})),
+  Info: ()=>h('svg',{width:14,height:14,viewBox:"0 0 24 24",fill:"none",stroke:"currentColor",strokeWidth:2},h('circle',{cx:12,cy:12,r:10}),h('line',{x1:12,y1:16,x2:12,y2:12}),h('line',{x1:12,y1:8,x2:12.01,y2:8})),
+};
+
+// ═══════════════════════════════════════════
+// DATOS
+// ═══════════════════════════════════════════
+const ROLE_LABELS = {admin:"Admin",rector:"Rector",coordinacion:"Coordinación",orientacion:"Orientación Escolar",docente:"Docente",auxiliar:"Auxiliar",estudiante:"Estudiante"};
+const ROLE_BADGE  = {admin:"bg-indigo-300 text-indigo-900",rector:"bg-purple-300 text-purple-900",coordinacion:"bg-amber-300 text-amber-900",orientacion:"bg-teal-300 text-teal-900",docente:"bg-emerald-300 text-emerald-900",auxiliar:"bg-orange-300 text-orange-900",estudiante:"bg-sky-300 text-sky-900"};
+const ROLE_TAG    = {admin:"bg-indigo-100 text-indigo-700",rector:"bg-purple-100 text-purple-700",coordinacion:"bg-amber-100 text-amber-700",orientacion:"bg-teal-100 text-teal-700",docente:"bg-emerald-100 text-emerald-700",auxiliar:"bg-orange-100 text-orange-700",estudiante:"bg-sky-100 text-sky-700"};
+const DEFAULT_CREDS = {admin:{pass:"admin123",role:"admin"},rector:{pass:"rector123",role:"rector"},coordinacion:{pass:"coord123",role:"coordinacion"},orientacion:{pass:"orienta123",role:"orientacion"},docente:{pass:"docente123",role:"docente"},auxiliar:{pass:"auxiliar123",role:"auxiliar"}};
+
+async function loadCreds(){try{const r=await appStorage.get("app-credentials");if(r?.value)return JSON.parse(r.value);}catch{}return DEFAULT_CREDS;}
+async function saveCreds(c){try{await appStorage.set("app-credentials",JSON.stringify(c));}catch(e){console.error(e);}}
+
+const II={nombre:"Nombre de la institución",lema:'"Lema institucional"',licencia:"Licencia de funcionamiento",jornada:"Jornada",dane:"",nit:"",email:"",web:"",dir:"",ciudad:"",shieldUrl:""};
+async function loadInstConfig(){
+  if(db){try{const s=await db.collection('config').doc('institucion').get();if(s.exists)Object.assign(II,s.data());}catch(e){console.error(e);}}
+  document.title=`Caracterización Estudiantil - ${II.nombre}`;
+  updateFavicon();
+}
+function updateFavicon(){
+  let link=document.querySelector("link[rel='icon']");
+  if(!link){link=document.createElement('link');link.rel='icon';document.head.appendChild(link);}
+  link.href=II.shieldUrl||"data:,";
+}
+async function saveInstConfig(data){Object.assign(II,data);document.title=`Caracterización Estudiantil - ${II.nombre}`;updateFavicon();if(db){try{await db.collection('config').doc('institucion').set(data);return true;}catch(e){console.error(e);return false;}}return true;}
+const SHIELD_URL=II.shieldUrl;
+const SHIELD_SVG=`<svg width="54" height="54" viewBox="0 0 100 116" xmlns="http://www.w3.org/2000/svg"><path d="M50 6 L92 18 L92 50 C92 78 74 98 50 110 C26 98 8 78 8 50 L8 18 Z" fill="#fff" stroke="#2563eb" stroke-width="2"/><path d="M4 19 Q50 2 96 19 L96 31 Q50 15 4 31 Z" fill="#3b82f6"/><g transform="translate(27,48)"><circle r="8" fill="#fbbf24"/><g stroke="#fbbf24" stroke-width="2"><line x1="0" y1="-13" x2="0" y2="-9"/><line x1="0" y1="13" x2="0" y2="9"/><line x1="-13" y1="0" x2="-9" y2="0"/><line x1="13" y1="0" x2="9" y2="0"/></g></g><path d="M4 96 Q50 113 96 96 L96 107 Q50 124 4 107 Z" fill="#3b82f6"/></svg>`;
+
+function lhHtml(){const sj=JSON.stringify(SHIELD_SVG);return `<script>function __sf(i){i.onerror=null;var d=document.createElement('div');d.innerHTML=${sj};i.parentNode.replaceChild(d.firstChild,i);}<\/script><div style="display:flex;align-items:center;gap:14px;border:1.5px solid #1e293b;padding:8px 14px;margin-bottom:14px;"><img src="${II.shieldUrl}" style="width:54px;height:54px;object-fit:contain;" onerror="__sf(this)"/><div style="flex:1;text-align:center;font-size:9.5px;font-style:italic;">${II.lema}</div><div style="text-align:right;font-size:8px;line-height:1.4;color:#475569;">${II.licencia}<br/>${II.jornada}<br/>DANE ${II.dane} NIT ${II.nit}</div></div>`;}
+function lfHtml(){return `<div style="margin-top:24px;border-top:1px solid #cbd5e1;padding-top:8px;text-align:center;font-size:8px;color:#64748b;">${II.dir} · ${II.ciudad}<br/>${II.email} · ${II.web}</div>`;}
+
+const ESTADO_OPTS=[{value:"MATRICULADO",label:"Matriculado"},{value:"RETIRADO",label:"Retirado"}];
+const TIPO_DOC_OPTS=[{value:"1",label:"1 - Cédula de Ciudadanía"},{value:"2",label:"2 - Tarjeta de Identidad"},{value:"3",label:"3 - Cédula de Extranjería"},{value:"5",label:"5 - Registro Civil de Nacimiento"},{value:"-6",label:"-6 - NIP"},{value:"-7",label:"-7 - NUIP"},{value:"8",label:"8 - Número Secretaría de Educación"},{value:"-9",label:"-9 - Certificado Cabildo"},{value:"10",label:"10 - PEP"},{value:"11",label:"11 - VISA"},{value:"12",label:"12 - TMF"},{value:"13",label:"13 - PPT"}];
+const TIPO_DOC_FAM_OPTS=[{value:"1",label:"1 - Cédula de Ciudadanía"},{value:"2",label:"2 - Tarjeta de Identidad"},{value:"3",label:"3 - Cédula de Extranjería"},{value:"5",label:"5 - Registro Civil de Nacimiento"},{value:"6",label:"6 - NIP"},{value:"7",label:"7 - NUIP"},{value:"8",label:"8 - Número Secretaría"},{value:"9",label:"9 - Certificado Cabildo"},{value:"10",label:"10 - PEP"},{value:"11",label:"11 - VISA"},{value:"12",label:"12 - TMF"},{value:"13",label:"13 - PPT"}];
+const GRADO_OPTS=[{value:"-1",label:"-1 - Jardín"},{value:"0",label:"0 - Transición"},{value:"1",label:"1 - Primero"},{value:"2",label:"2 - Segundo"},{value:"3",label:"3 - Tercero"},{value:"4",label:"4 - Cuarto"},{value:"5",label:"5 - Quinto"},{value:"6",label:"6 - Sexto"},{value:"7",label:"7 - Séptimo"},{value:"8",label:"8 - Octavo"},{value:"9",label:"9 - Noveno"},{value:"10",label:"10 - Décimo"},{value:"11",label:"11 - Undécimo"},{value:"23",label:"23 - Ciclo 3"},{value:"24",label:"24 - Ciclo 4"},{value:"25",label:"25 - Ciclo 5"},{value:"26",label:"26 - Ciclo 6"}];
+const VIVIENDA_TIPO_OPTS=[{value:"01",label:"01 - Casa"},{value:"02",label:"02 - Apartamento"},{value:"03",label:"03 - Cuartos"},{value:"04",label:"04 - Otros"}];
+const VIVIENDA_PROP_OPTS=[{value:"01",label:"01 - Propia"},{value:"02",label:"02 - Propia con crédito"},{value:"03",label:"03 - Arriendo"},{value:"04",label:"04 - Usufructo"}];
+const DISCRIM_OPTS=[{value:"01",label:"01 - Discapacidad"},{value:"02",label:"02 - Ritmo de aprendizaje"},{value:"03",label:"03 - Apariencia física"},{value:"04",label:"04 - Religión"},{value:"05",label:"05 - Pertenencia étnica"},{value:"06",label:"06 - Características familiares"},{value:"07",label:"07 - Otras"}];
+const SERVICIOS_OPTS=[{value:"1",label:"1 - Agua"},{value:"2",label:"2 - Alcantarillado"},{value:"3",label:"3 - Gas"},{value:"4",label:"4 - Teléfono"},{value:"5",label:"5 - Internet"},{value:"6",label:"6 - Energía"},{value:"7",label:"7 - Basuras"},{value:"08",label:"08 - Energía alternativa"}];
+const ANTECE_DISC_OPTS=[{value:"1",label:"1 - Llamados de atención"},{value:"2",label:"2 - Suspensiones"},{value:"3",label:"3 - Llamados y suspensiones"},{value:"4",label:"4 - No aplica"}];
+const ASISTENCIA_ANNO_OPTS=[{value:"1",label:"1 - Alta"},{value:"2",label:"2 - Media"},{value:"3",label:"3 - Baja"},{value:"4",label:"4 - No aplica"}];
+const ASIGNATURAS_OPTS=[{value:"01",label:"01 - Ciencias naturales"},{value:"02",label:"02 - Ciencias sociales"},{value:"03",label:"03 - Ed. artística"},{value:"04",label:"04 - Ed. ética y valores"},{value:"05",label:"05 - Ed. física"},{value:"06",label:"06 - Ed. religiosa"},{value:"07",label:"07 - Humanidades y lengua"},{value:"08",label:"08 - Matemáticas"},{value:"09",label:"09 - Tecnología e Informática"}];
+const ESTRATEGIAS_OPTS=[{value:"ALIMENT",label:"Alimentación"},{value:"ATE_INT",label:"Atención integral"},{value:"J_CMPMT",label:"Jornada complementaria"},{value:"PAE_EMERGE",label:"PAE - Emergencia"},{value:"SUBCON",label:"Subsidios condicionados"},{value:"TRANSP",label:"Transporte escolar"},{value:"UTILES",label:"Útiles escolares"},{value:"VESTUARIO",label:"Vestuario escolar"}];
+const RAZON_DESERCION_OPTS=[{value:"01",label:"01 - Personal"},{value:"02",label:"02 - Familiar"},{value:"03",label:"03 - Institucional"},{value:"04",label:"04 - Social"},{value:"06",label:"06 - Otra"}];
+const CAUSAS_MAP={"01":[{value:"01",label:"01 - Trabajar"},{value:"02",label:"02 - Padres a temprana edad"},{value:"03",label:"03 - Salud del estudiante"},{value:"04",label:"04 - Extraedad"},{value:"05",label:"05 - Bajo rendimiento"},{value:"06",label:"06 - Problemas de lectura"},{value:"07",label:"07 - Problemas de escritura"},{value:"08",label:"08 - Problemas de oralidad"},{value:"09",label:"09 - Expulsión"},{value:"10",label:"10 - Repitencia"},{value:"11",label:"11 - Poco gusto por el estudio"},{value:"12",label:"12 - Dificultades académicas"},{value:"13",label:"13 - Metodologías no pertinentes"},{value:"14",label:"14 - Sin plan de vida"},{value:"15",label:"15 - Sin orientación socio-ocupacional"},{value:"16",label:"16 - Piensa que el estudio no sirve"}],"02":[{value:"01",label:"01 - Cambio de residencia"},{value:"02",label:"02 - Desempleo de padres"},{value:"03",label:"03 - Muerte de los padres"},{value:"04",label:"04 - Desplazamiento forzado"},{value:"05",label:"05 - Poca importancia a educación"},{value:"06",label:"06 - Cambio de país"}],"03":[{value:"01",label:"01 - Hacinamiento"},{value:"02",label:"02 - Infraestructura"},{value:"03",label:"03 - Trato agresivo"},{value:"04",label:"04 - Discriminación"},{value:"05",label:"05 - Zona no segura"},{value:"06",label:"06 - Zona lejana"},{value:"07",label:"07 - Zona de desastres"},{value:"08",label:"08 - Oferta incompleta"},{value:"09",label:"09 - Planta docente incompleta"},{value:"10",label:"10 - Insuficiente atención psicosocial"},{value:"11",label:"11 - Prácticas pedagógicas inadecuadas"},{value:"12",label:"12 - Jornadas inadecuadas"},{value:"13",label:"13 - Costos educativos"},{value:"14",label:"14 - Oferta no inclusiva"},{value:"15",label:"15 - Conflictos entre estudiantes"},{value:"16",label:"16 - Conflictos entre docentes"},{value:"17",label:"17 - Conflictos entre directivos"},{value:"18",label:"18 - Conflictos estudiantes-docentes"},{value:"19",label:"19 - Conflictos estudiantes-directivos"},{value:"20",label:"20 - Conflictos docentes-directivos"}],"04":[{value:"01",label:"01 - Pandillismo"},{value:"02",label:"02 - Prostitución"},{value:"03",label:"03 - Drogadicción"},{value:"04",label:"04 - Grupos armados"},{value:"05",label:"05 - Inseguridad"},{value:"06",label:"06 - Acoso escolar"},{value:"07",label:"07 - Bullying"},{value:"08",label:"08 - Presencia de minas"},{value:"09",label:"09 - Riesgo de reclutamiento"},{value:"10",label:"10 - Cultivos ilícitos"},{value:"11",label:"11 - Distancia hogar-establecimiento"}],"06":[]};
+const NIVEL_EDU_OPTS=[{value:"1",label:"1 - Sin educación"},{value:"2",label:"2 - Primaria incompleta"},{value:"3",label:"3 - Primaria completa"},{value:"4",label:"4 - Media incompleta"},{value:"5",label:"5 - Media completa"},{value:"6",label:"6 - Superior incompleta"},{value:"7",label:"7 - Superior completa"},{value:"8",label:"8 - Posgrado"},{value:"9",label:"9 - Secundaria completa"},{value:"10",label:"10 - Secundaria incompleta"}];
+const ASISTENCIA_REU_OPTS=[{value:"1",label:"1 - Siempre"},{value:"2",label:"2 - Casi siempre"},{value:"3",label:"3 - Algunas veces"},{value:"4",label:"4 - Casi nunca"},{value:"5",label:"5 - Nunca"}];
+const TIPO_EMPLEO_OPTS=[{value:"1",label:"1 - Temporal"},{value:"2",label:"2 - Permanente"},{value:"3",label:"3 - No tiene"}];
+const FREC_OPTS=[{value:"1",label:"1 - No ha cambiado"},{value:"2",label:"2 - Entre 1 y 2 veces"},{value:"3",label:"3 - Entre 3 y 4 veces"},{value:"4",label:"4 - Más de 4 veces"}];
+
+const SECTIONS=[{id:"ident",label:"Identificación"},{id:"personal",label:"Situación Personal"},{id:"vivienda",label:"Vivienda y Hogar"},{id:"historial",label:"Historial Educativo"},{id:"academico",label:"Seguimiento Académico"},{id:"desercion",label:"Retiro / Deserción"},{id:"familiar",label:"Datos del Acudiente"}];
+
+const FIELD_DEFS=[
+  {id:"ANNO_INF",label:"Año de información",type:"number",section:"ident",min:2000,max:2030},
+  {id:"PER_ID",label:"ID Persona (SIMAT)",type:"text",section:"ident",studentLocked:true,validate:"numeric"},
+  {id:"TIPO_DOCUMENTO",label:"Tipo de documento",type:"select",section:"ident",options:TIPO_DOC_OPTS,studentLocked:true},
+  {id:"NRO_DOCUMENTO",label:"Número de documento",type:"text",section:"ident",studentLocked:true,validate:"alnum"},
+  {id:"FECHA_NACIMIENTO",label:"Fecha de nacimiento",type:"date",section:"ident",studentLocked:true},
+  {id:"APELLIDO1",label:"Primer apellido",type:"text",section:"ident",studentLocked:true,validate:"alpha"},
+  {id:"APELLIDO2",label:"Segundo apellido",type:"text",section:"ident",studentLocked:true,validate:"alpha"},
+  {id:"NOMBRE1",label:"Primer nombre",type:"text",section:"ident",studentLocked:true,validate:"alpha"},
+  {id:"NOMBRE2",label:"Segundo nombre",type:"text",section:"ident",studentLocked:true,validate:"alpha"},
+  {id:"GRADO",label:"Grado",type:"select",section:"ident",options:GRADO_OPTS,studentLocked:true},
+  {id:"ESTADO",label:"Estado del estudiante",type:"select",section:"ident",options:ESTADO_OPTS,adminOnly:true},
+  {id:"PIN",label:"PIN de acceso del estudiante (4-6 dígitos, para que actualice su información)",type:"text",section:"ident",adminOnly:true},
+  {id:"VIVE_SOLO",label:"¿Vive solo?",type:"yesno",section:"personal"},
+  {id:"EMBARAZO",label:"¿Está en embarazo?",type:"yesno",section:"personal"},
+  {id:"TRABAJA",label:"¿Trabaja?",type:"yesno",section:"personal"},
+  {id:"MAT_PAT_TEMPRANA_EDAD",label:"¿Maternidad/Paternidad a temprana edad?",type:"yesno",section:"personal"},
+  {id:"VICTIMA_DISCRIMINACION",label:"¿Víctima de discriminación?",type:"yesno",section:"personal"},
+  {id:"VICTIMA_AGRESIONES",label:"¿Víctima de agresiones?",type:"yesno",section:"personal"},
+  {id:"DISCRIMINACION",label:"Tipo de discriminación",type:"multicheck",section:"personal",options:DISCRIM_OPTS},
+  {id:"DISCRIMINACION_OTRA",label:"Otra discriminación",type:"text",section:"personal",validate:"alpha"},
+  {id:"TIENE_DEFINIDO_ESTUDIAR",label:"¿Tiene definido qué estudiar?",type:"yesno",section:"personal"},
+  {id:"QUE_DESEA_ESTUDIAR",label:"¿Qué desea estudiar?",type:"textarea",section:"personal",validate:"alpha"},
+  {id:"NUMERO_PERSONAS_HOGAR",label:"Número de personas en el hogar",type:"number",section:"vivienda",min:1,max:20},
+  {id:"VIVIENDA_TIPO",label:"Tipo de vivienda",type:"select",section:"vivienda",options:VIVIENDA_TIPO_OPTS},
+  {id:"VIVIENDA_PROPIEDAD",label:"Propiedad de la vivienda",type:"select",section:"vivienda",options:VIVIENDA_PROP_OPTS},
+  {id:"SERVICIOS_VIVIENDA",label:"Servicios de la vivienda",type:"multicheck",section:"vivienda",options:SERVICIOS_OPTS},
+  {id:"EDUCACION_PREESCOLAR",label:"¿Realizó educación preescolar?",type:"yesno",section:"historial"},
+  {id:"ANOS_EDUCACION_PREESCOLAR",label:"Años de educación preescolar",type:"number",section:"historial",min:0,max:3},
+  {id:"RET_EST_SIN_TERMINAR_ANO_ESC",label:"¿Se retiró sin terminar el año?",type:"yesno",section:"historial"},
+  {id:"MESES_POR_FUERA_SIS_EDUCATIVO",label:"Meses fuera del sistema educativo",type:"number",section:"historial",min:1,max:36},
+  {id:"ABANDONOS_TEMPORALES",label:"Número de abandonos temporales",type:"number",section:"historial",min:0,max:3},
+  {id:"REPETIDA_ANO",label:"¿Ha repetido año?",type:"yesno",section:"historial"},
+  {id:"VECES_REPETIDA_ANO",label:"Veces que ha repetido año",type:"number",section:"historial",min:0,max:4},
+  {id:"REPETIDA_GRADO_ACTUAL",label:"¿Repite el grado actual?",type:"yesno",section:"historial"},
+  {id:"ANTECE_DISC_VIDA_ACA",label:"Antecedentes disciplinarios",type:"select",section:"historial",options:ANTECE_DISC_OPTS},
+  {id:"ASISTENCIA_ANNO_ANTERIOR",label:"Asistencia año anterior",type:"select",section:"historial",options:ASISTENCIA_ANNO_OPTS},
+  {id:"DIFICULTADES_APRENDIZAJE",label:"¿Dificultades de aprendizaje?",type:"yesno",section:"historial"},
+  {id:"VINCULADO_MOD_EDU_INICIAL",label:"¿Vinculado a modelo educativo inicial?",type:"yesno",section:"historial"},
+  {id:"ASIG_PERIODO_1",label:"Asignaturas perdidas - Período 1",type:"multicheck",section:"academico",options:ASIGNATURAS_OPTS},
+  {id:"ASIG_PERIODO_2",label:"Asignaturas perdidas - Período 2",type:"multicheck",section:"academico",options:ASIGNATURAS_OPTS},
+  {id:"ESTRATEGIAS_DEBERIA_TENER",label:"Estrategias que debería tener",type:"multicheck",section:"academico",options:ESTRATEGIAS_OPTS},
+  {id:"RAZON_DESERCION",label:"Razón de deserción",type:"select",section:"desercion",options:RAZON_DESERCION_OPTS},
+  {id:"CAUSAS",label:"Causas (según razón)",type:"dependent_select",section:"desercion",dependsOn:"RAZON_DESERCION"},
+  {id:"ES_LA_RAZON",label:"¿Es la razón principal?",type:"yesno",section:"desercion"},
+  {id:"FECHA_RETIRO",label:"Fecha de retiro",type:"date",section:"desercion"},
+  {id:"RAZON_DESERCION_OTRAS",label:"Otra razón (especifique)",type:"text",section:"desercion",validate:"alpha"},
+  {id:"TIPO_DOCUMENTO_FAMILIAR",label:"Tipo de documento (acudiente)",type:"select",section:"familiar",options:TIPO_DOC_FAM_OPTS},
+  {id:"NRO_DOCUMENTO_FAMILAIR",label:"Número de documento (acudiente)",type:"text",section:"familiar",validate:"alnum"},
+  {id:"APELLIDO1_FAMILIAR",label:"Primer apellido (acudiente)",type:"text",section:"familiar",validate:"alpha"},
+  {id:"APELLIDO2_FAMILIAR",label:"Segundo apellido (acudiente)",type:"text",section:"familiar",validate:"alpha"},
+  {id:"NOMBRE1_FAMILIAR",label:"Primer nombre (acudiente)",type:"text",section:"familiar",validate:"alpha"},
+  {id:"NOMBRE2_FAMILIAR",label:"Segundo nombre (acudiente)",type:"text",section:"familiar",validate:"alpha"},
+  {id:"NIVEL_EDUCATIVO",label:"Nivel educativo del acudiente",type:"select",section:"familiar",options:NIVEL_EDU_OPTS},
+  {id:"ASISTE_REU_DIF_BOLETIN",label:"Asistencia a reunión de boletines",type:"select",section:"familiar",options:ASISTENCIA_REU_OPTS},
+  {id:"ASISTE_ENTREGA_INFORMES",label:"Asistencia a entrega de informes",type:"select",section:"familiar",options:ASISTENCIA_REU_OPTS},
+  {id:"TIPO_EMPLEO",label:"Tipo de empleo (acudiente)",type:"select",section:"familiar",options:TIPO_EMPLEO_OPTS},
+  {id:"FRECUENCIA_CAMBIO_DOMIC",label:"Frecuencia de cambio de domicilio",type:"select",section:"familiar",options:FREC_OPTS},
+  {id:"DIRECCION",label:"Dirección",type:"text",section:"familiar"},
+  {id:"TELEFONO",label:"Teléfono",type:"text",section:"familiar",validate:"numeric"},
+];
+
+const RISK_FIELDS=["EMBARAZO","TRABAJA","MAT_PAT_TEMPRANA_EDAD","VICTIMA_DISCRIMINACION","VICTIMA_AGRESIONES","RET_EST_SIN_TERMINAR_ANO_ESC","REPETIDA_ANO","REPETIDA_GRADO_ACTUAL","DIFICULTADES_APRENDIZAJE"];
+
+function genPin(s){
+  const letra=(s.NOMBRE1||"").trim().charAt(0).toUpperCase();
+  const apellido=(s.APELLIDO1||"").trim().toUpperCase().replace(/[^A-ZÑ]/g,"");
+  const doc=(s.NRO_DOCUMENTO||"").replace(/\D/g,"");
+  if(!letra||!apellido||doc.length<4)return "";
+  return `${letra}${apellido}${doc.slice(-4)}e`;
+}
+function emptyStudent(){const o={};FIELD_DEFS.forEach(f=>{o[f.id]="";});o._id=null;o.ESTADO="MATRICULADO";return o;}
+function riskCount(s){if(s.ESTADO==="RETIRADO")return -1;return RISK_FIELDS.filter(f=>s[f]==="S").length;}
+function normalizeKey(k){return String(k||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().replace(/\(.*?\)/g,"").replace(/ALT\s*\+?\s*124/g,"").replace(/[¿?]/g,"").replace(/[^A-Z0-9]+/g,"_").replace(/_+/g,"_").replace(/^_|_$/g,"");}
+const FIELD_KEY_MAP={};FIELD_DEFS.forEach(f=>{FIELD_KEY_MAP[normalizeKey(f.id)]=f.id;});
+function countBy(arr,fid){const c={};arr.forEach(s=>{const v=s[fid];if(v)c[v]=(c[v]||0)+1;});return Object.entries(c).map(([name,total])=>({name,total}));}
+function countMulti(arr,fids){const c={};arr.forEach(s=>{fids.forEach(f=>{(s[f]||"").split("|").filter(Boolean).forEach(v=>{c[v]=(c[v]||0)+1;});});});return Object.entries(c).map(([name,total])=>({name,total})).sort((a,b)=>b.total-a.total);}
+function matchVal(opts,raw){if(!raw)return "";const tries=[raw,String(raw).padStart(2,"0"),String(raw).replace(/^0+/,"")];for(const t of tries){const f=opts.find(o=>(typeof o==="object"?o.value:o)===t);if(f)return typeof f==="object"?f.value:f;}return raw;}
+function resolveLabel(field,value){
+  if(!value)return "—";
+  if(field.type==="yesno")return value==="S"?"Sí":value==="N"?"No":value;
+  if(field.type==="date"){try{return new Date(value+"T00:00:00").toLocaleDateString("es-CO");}catch{return value;}}
+  const strip=l=>l&&l.includes(" - ")?l.split(" - ").slice(1).join(" - "):(l||value);
+  if(field.type==="multicheck"){return (value||"").split("|").filter(Boolean).map(v=>{const tries=[v,String(v).padStart(2,"0"),String(v).replace(/^0+/,"")];let o;for(const t of tries){o=(field.options||[]).find(x=>(typeof x==="object"?x.value:x)===t);if(o)break;}if(!o)o=(field.options||[]).find(x=>(typeof x==="object"?x.label:x)===v);return strip(o?(typeof o==="object"?o.label:o):v);}).join(", ")||"—";}
+  if(field.type==="select"){const opts=field.options||[];const tries=[value,String(value).padStart(2,"0"),String(value).replace(/^0+/,"")];let o;for(const t of tries){o=opts.find(x=>(typeof x==="object"?x.value:x)===t);if(o)break;}if(!o)o=opts.find(x=>(typeof x==="object"?x.label:x)===value);return strip(o?(typeof o==="object"?o.label:o):value);}
+  return value;
+}
+
+function dlHtml(html,name){const blob=new Blob([html],{type:"text/html;charset=utf-8"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=name;document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(()=>URL.revokeObjectURL(url),2000);}
+
+function printCard(s){
+  const nombre=[s.NOMBRE1,s.NOMBRE2,s.APELLIDO1,s.APELLIDO2].filter(Boolean).join(" ");
+  const grado=GRADO_OPTS.find(g=>g.value===s.GRADO)?.label?.split(" - ")[1]||s.GRADO||"—";
+  const tipoDoc=TIPO_DOC_OPTS.find(o=>o.value===s.TIPO_DOCUMENTO)?.label?.split(" - ")[1]||"Doc";
+  const strip2=l=>l&&l.includes(" - ")?l.split(" - ").slice(1).join(" - "):l;
+  const secHtml=SECTIONS.map(sec=>{
+    if(sec.id==="desercion"&&s.ESTADO!=="RETIRADO")return "";
+    const fields=FIELD_DEFS.filter(f=>f.section===sec.id&&!f.hidden);
+    const rows=fields.map(f=>{const raw=s[f.id];let d;if(f.type==="dependent_select"){const o=(CAUSAS_MAP[s.RAZON_DESERCION]||[]).find(o=>o.value===raw);d=o?strip2(o.label):raw||"—";}else{d=resolveLabel(f,raw);}const w=f.type==="textarea"||f.type==="multicheck";return `<div style="padding:3px 0;${w?"grid-column:span 2;":""}"><div style="font-size:10px;color:#94a3b8;">${f.label}</div><div style="font-size:12px;color:#1e293b;font-weight:500;">${d}</div></div>`;}).join("");
+    return `<div style="margin-bottom:16px;"><div style="font-size:10px;font-weight:700;color:#4f46e5;text-transform:uppercase;border-bottom:1px solid #e0e7ff;padding-bottom:3px;margin-bottom:6px;">${sec.label}</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 20px;">${rows}</div></div>`;
+  }).join("");
+  const html=`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Ficha - ${nombre}</title><style>body{font-family:Arial,sans-serif;margin:24px;color:#1e293b;}@media print{button{display:none!important;}}</style></head><body><button onclick="window.print()" style="margin-bottom:14px;padding:7px 18px;background:#4f46e5;color:#fff;border:none;border-radius:7px;font-size:13px;cursor:pointer;">🖨️ Imprimir / Guardar PDF</button>${lhHtml()}<div style="text-align:center;font-size:13px;font-weight:700;letter-spacing:0.5px;color:#334155;text-transform:uppercase;margin-bottom:14px;">Ficha Estudiante - SIMPADE</div><div style="display:flex;align-items:center;gap:14px;border-bottom:2px solid #4f46e5;padding-bottom:10px;margin-bottom:16px;"><div style="width:48px;height:48px;border-radius:50%;background:#e0e7ff;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:#4f46e5;">${(s.NOMBRE1||"?")[0]}${(s.APELLIDO1||"")[0]}</div><div><div style="font-size:16px;font-weight:700;">${nombre} <span style="font-size:10px;padding:2px 7px;border-radius:999px;background:${s.ESTADO==="RETIRADO"?"#ffe4e6":"#d1fae5"};color:${s.ESTADO==="RETIRADO"?"#be123c":"#047857"};">${s.ESTADO==="RETIRADO"?"Retirado":"Matriculado"}</span></div><div style="font-size:11px;color:#64748b;">${tipoDoc}: ${s.NRO_DOCUMENTO||"—"} · Grado: ${grado} · Año: ${s.ANNO_INF||"—"}</div></div></div>${secHtml}<div style="font-size:9px;color:#cbd5e1;text-align:right;margin-top:12px;">Generado el ${new Date().toLocaleDateString("es-CO")}</div>${lfHtml()}</body></html>`;
+  const w=window.open("","_blank");w.document.write(html);w.document.close();
+}
+
+function printRetiro(s){
+  const nombre=[s.NOMBRE1,s.NOMBRE2,s.APELLIDO1,s.APELLIDO2].filter(Boolean).join(" ");
+  const grado=GRADO_OPTS.find(g=>g.value===s.GRADO)?.label?.split(" - ")[1]||s.GRADO||"";
+  const fechaRet=s.FECHA_RETIRO?(()=>{try{return new Date(s.FECHA_RETIRO+"T00:00:00").toLocaleDateString("es-CO");}catch{return s.FECHA_RETIRO;}})():"";
+  const razon=s.RAZON_DESERCION||"",causa=s.CAUSAS||"";
+  const strip=l=>l&&l.includes(" - ")?l.split(" - ").slice(1).join(" - "):l;
+  function rl(cat,items){return items.map(i=>{const chk=razon===cat&&causa===i.value;return `<div style="display:flex;gap:5px;padding:1.5px 0;font-size:11px;${chk?"font-weight:700;":"color:#475569;"}"><span>${chk?"☑":"☐"}</span><span>${strip(i.label)}</span></div>`;}).join("");}
+  const otras=razon==="06";
+  const html=`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Retiro - ${nombre}</title><style>body{font-family:Arial,sans-serif;margin:24px;font-size:12px;}@media print{button{display:none!important;}}h1{font-size:14px;text-align:center;text-decoration:underline;margin:14px 0;}.fl{margin:8px 0;}.fl b{border-bottom:1px solid #000;}.cols{display:grid;grid-template-columns:1fr 1fr;gap:0 24px;margin-top:12px;}.ct{font-weight:700;font-size:11px;text-decoration:underline;margin:10px 0 4px;}</style></head><body><button onclick="window.print()" style="margin-bottom:14px;padding:7px 18px;background:#4f46e5;color:#fff;border:none;border-radius:7px;cursor:pointer;">🖨️ Imprimir / Guardar PDF</button>${lhHtml()}<h1>FORMATO DE RETIRO DE ESTUDIANTES</h1><div class="fl">Nombre del Estudiante: <b>${nombre}</b></div><div class="fl">Número de Identificación: <b>${s.NRO_DOCUMENTO||""}</b>&nbsp;&nbsp; Grado: <b>${grado}</b></div><div class="fl">Fecha de Retiro: <b>${fechaRet}</b></div><div class="cols"><div><div class="ct">RAZONES PERSONALES</div>${rl("01",CAUSAS_MAP["01"])}</div><div><div class="ct">RAZONES INSTITUCIONALES</div>${rl("03",CAUSAS_MAP["03"])}</div><div><div class="ct">RAZONES FAMILIARES</div>${rl("02",CAUSAS_MAP["02"])}</div><div><div class="ct">RAZONES DE CONTEXTO</div>${rl("04",CAUSAS_MAP["04"])}</div></div><div class="ct">OTRAS RAZONES</div><div style="display:flex;gap:5px;${otras?"font-weight:700;":"color:#475569;"}"><span>${otras?"☑":"☐"}</span><span>Otras${s.RAZON_DESERCION_OTRAS?`: ${s.RAZON_DESERCION_OTRAS}`:""}</span></div><div style="margin-top:50px;text-align:center;"><div style="border-top:1px solid #000;width:260px;margin:0 auto;"></div><div style="margin-top:3px;font-size:11px;">Firma del Acudiente</div></div>${lfHtml()}</body></html>`;
+  const w=window.open("","_blank");w.document.write(html);w.document.close();
+}
+
+// ═══════════════════════════════════════════
+// COMPONENTES
+// ═══════════════════════════════════════════
+function cls(...args){return args.filter(Boolean).join(" ");}
+
+function Btn({onClick,disabled,className,children}){return h('button',{onClick,disabled,className},children);}
+
+function Select({value,onChange,options,placeholder="Seleccionar...",className=""}){
+  return h('select',{value:value||"",onChange:e=>onChange(e.target.value),className:"w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white "+className},
+    h('option',{value:""},placeholder),
+    options.map(o=>{const v=typeof o==="object"?o.value:o;const l=typeof o==="object"?o.label:o;return h('option',{key:v,value:v},l);})
+  );
+}
+
+function FieldRenderer({field,value,onChange,parentValue,disabled}){
+  const wide=field.type==="textarea"||field.type==="multicheck";
+  const ic="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white";
+  const ro=opts=>opts.map(o=>{const v=typeof o==="object"?o.value:o;const l=typeof o==="object"?o.label:o;return h('option',{key:v,value:v},l);});
+
+  if(disabled){
+    return h('div',{className:wide?"md:col-span-2":""},
+      h('label',{className:"block text-xs font-medium text-slate-500 mb-1"},field.label),
+      h('div',{className:"w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50 text-slate-600 flex items-center justify-between"},
+        h('span',null,resolveLabel(field,value)||"—"),
+        h('span',{className:"flex items-center gap-1 text-xs text-amber-600"},h(Icons.Lock),h('span',null,"Restringido"))
+      )
+    );
+  }
+
+  let input;
+  function filterVal(v){
+    if(field.validate==="alpha")return v.replace(/[^A-Za-zÁÉÍÓÚÑÜáéíóúñü\s]/g,"");
+    if(field.validate==="alnum")return v.replace(/[^A-Za-z0-9]/g,"").toUpperCase();
+    if(field.validate==="numeric")return v.replace(/[^0-9]/g,"");
+    return v;
+  }
+  if(field.type==="text") input=h('input',{type:"text",value:value||"",onChange:e=>onChange(filterVal(e.target.value)),className:ic});
+  else if(field.type==="number") input=h('input',{type:"text",inputMode:"numeric",value:value||"",onChange:e=>onChange(filterVal(e.target.value.replace(/[^0-9]/g,""))),className:ic});
+  else if(field.type==="date") input=h('input',{type:"date",value:value||"",onChange:e=>onChange(e.target.value),className:ic});
+  else if(field.type==="textarea") input=h('textarea',{value:value||"",onChange:e=>onChange(filterVal(e.target.value)),rows:3,className:ic});
+  else if(field.type==="select"){const nv=matchVal(field.options||[],value);input=h('select',{value:nv,onChange:e=>onChange(e.target.value),className:ic},h('option',{value:""},"Seleccionar..."),ro(field.options||[]));}
+  else if(field.type==="yesno") input=h('select',{value:value||"",onChange:e=>onChange(e.target.value),className:ic},h('option',{value:""},"Seleccionar..."),h('option',{value:"S"},"Sí"),h('option',{value:"N"},"No"));
+  else if(field.type==="dependent_select"){
+    if(!parentValue) input=h('p',{className:"text-xs text-slate-400 italic py-2"},"Seleccione primero la razón de deserción.");
+    else if(!(CAUSAS_MAP[parentValue]||[]).length) input=h('p',{className:"text-xs text-slate-400 italic py-2"},"No hay causas para esta razón.");
+    else input=h('select',{value:value||"",onChange:e=>onChange(e.target.value),className:ic},h('option',{value:""},"Seleccionar causa..."),ro(CAUSAS_MAP[parentValue]||[]));
+  }
+  else if(field.type==="multicheck"){
+    input=h('div',{className:"flex flex-wrap gap-2"},(field.options||[]).map(o=>{
+      const v=typeof o==="object"?o.value:o,l=typeof o==="object"?o.label:o;
+      const sel=(value||"").split("|").filter(Boolean),chk=sel.includes(v);
+      return h('label',{key:v,className:`flex items-center gap-1 px-2 py-1 rounded-lg border text-xs cursor-pointer ${chk?"bg-indigo-50 border-indigo-300 text-indigo-700":"border-slate-200 text-slate-600"}`},
+        h('input',{type:"checkbox",className:"hidden",checked:chk,onChange:()=>{const n=chk?sel.filter(x=>x!==v):[...sel,v];onChange(n.join("|"));}}),l
+      );
+    }));
+  }
+
+  return h('div',{className:wide?"md:col-span-2":""},
+    h('label',{className:"block text-xs font-medium text-slate-500 mb-1"},field.label),
+    input
+  );
+}
+
+function riskBadge(n){
+  if(n===-1)return h('span',{className:"px-2 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-400"},"N/A");
+  let c="bg-slate-100 text-slate-600",t="Bajo";
+  if(n>=3){c="bg-rose-100 text-rose-700";t="Alto";}else if(n>=1){c="bg-amber-100 text-amber-700";t="Medio";}
+  return h('span',{className:`px-2 py-1 rounded-full text-xs font-medium ${c}`},`${t} (${n})`);
+}
+function estadoBadge(e){return e==="RETIRADO"?h('span',{className:"px-2 py-1 rounded-full text-xs font-medium bg-rose-100 text-rose-700"},"Retirado"):h('span',{className:"px-2 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700"},"Matriculado");}
+
+function LoginScreen({onLogin}){
+  const [creds,setCreds]=useState(null);
+  const [mode,setMode]=useState("staff"); // "staff" | "student"
+  const [user,setUser]=useState(""),[pass,setPass]=useState(""),
+        [showPass,setShowPass]=useState(false),[error,setError]=useState("");
+  const [doc,setDoc]=useState(""),[pin,setPin]=useState(""),[checking,setChecking]=useState(false);
+  const [showHelp,setShowHelp]=useState(false);
+  useEffect(()=>{loadCreds().then(setCreds);},[]);
+  function go(){if(!creds)return;const f=Object.entries(creds).find(([u])=>u===user.trim().toLowerCase());if(f&&f[1].pass===pass){onLogin({username:f[0],role:f[1].role});}else setError("Usuario o contraseña incorrectos.");}
+  async function goStudent(){
+    if(!studentsCol){setError("La base de datos no está disponible en este momento.");return;}
+    if(!doc.trim()||!pin.trim()){setError("Ingresa tu número de documento y tu PIN.");return;}
+    setChecking(true);setError("");
+    try{
+      const snap=await studentsCol.where("NRO_DOCUMENTO","==",doc.trim()).get();
+      const match=snap.docs.find(d=>(d.data().PIN||"")===pin.trim());
+      if(match){
+        const s=match.data();
+        onLogin({username:`${s.NOMBRE1||""} ${s.APELLIDO1||""}`.trim()||doc.trim(),role:"estudiante",studentId:match.id});
+      } else {
+        setError("Documento o PIN incorrectos. Consulta con la institución si no tienes tu PIN.");
+      }
+    }catch(e){console.error(e);setError("No se pudo verificar. Intenta de nuevo.");}
+    finally{setChecking(false);}
+  }
+  return h('div',{className:"min-h-screen bg-gradient-to-br from-indigo-600 to-blue-600 flex items-center justify-center px-4"},
+    h('div',{className:"bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm"},
+      h('div',{className:"flex flex-col items-center mb-6"},
+        h('div',{className:"bg-indigo-100 rounded-full p-3 mb-3"},h(Icons.Grad)),
+        h('h1',{className:"text-xl font-bold text-slate-800"},"Caracterización Estudiantil"),
+        h('p',{className:"text-sm text-slate-400 mt-1"},`${II.nombre} - Ingresa tus credenciales`)
+      ),
+      h('div',{className:"flex gap-1 bg-slate-100 rounded-lg p-1 mb-5"},
+        h('button',{onClick:()=>{setMode("staff");setError("");},className:`flex-1 py-1.5 rounded-md text-xs font-medium ${mode==="staff"?"bg-white shadow text-indigo-700":"text-slate-500"}`},"Personal institucional"),
+        h('button',{onClick:()=>{setMode("student");setError("");},className:`flex-1 py-1.5 rounded-md text-xs font-medium ${mode==="student"?"bg-white shadow text-indigo-700":"text-slate-500"}`},"Soy estudiante")
+      ),
+      mode==="staff"?h('div',{className:"space-y-4"},
+        h('div',null,h('label',{className:"block text-xs font-medium text-slate-500 mb-1"},"Usuario"),h('input',{type:"text",value:user,onChange:e=>setUser(e.target.value),onKeyDown:e=>e.key==="Enter"&&go(),placeholder:"Usuario",className:"w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"})),
+        h('div',null,h('label',{className:"block text-xs font-medium text-slate-500 mb-1"},"Contraseña"),
+          h('div',{className:"relative"},
+            h('input',{type:showPass?"text":"password",value:pass,onChange:e=>setPass(e.target.value),onKeyDown:e=>e.key==="Enter"&&go(),placeholder:"Contraseña",className:"w-full border border-slate-200 rounded-lg px-3 py-2 pr-16 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"}),
+            h('button',{type:"button",onClick:()=>setShowPass(!showPass),className:"absolute right-3 top-2 text-xs text-slate-400"},showPass?"Ocultar":"Ver")
+          )
+        ),
+        error&&h('div',{className:"bg-rose-50 text-rose-600 text-xs px-3 py-2 rounded-lg"},error),
+        h('button',{onClick:go,className:"w-full py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700"},"Ingresar")
+      ):h('div',{className:"space-y-4"},
+        h('div',null,h('label',{className:"block text-xs font-medium text-slate-500 mb-1"},"Número de documento"),h('input',{type:"text",value:doc,onChange:e=>setDoc(e.target.value),onKeyDown:e=>e.key==="Enter"&&goStudent(),placeholder:"Tu número de documento",className:"w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"})),
+        h('div',null,h('label',{className:"block text-xs font-medium text-slate-500 mb-1"},"PIN"),h('input',{type:"password",value:pin,onChange:e=>setPin(e.target.value),onKeyDown:e=>e.key==="Enter"&&goStudent(),placeholder:"PIN asignado por la institución",className:"w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"})),
+        error&&h('div',{className:"bg-rose-50 text-rose-600 text-xs px-3 py-2 rounded-lg"},error),
+        h('button',{disabled:checking,onClick:goStudent,className:"w-full py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-60"},checking?"Verificando...":"Ingresar"),
+        h('button',{type:"button",onClick:()=>setShowHelp(!showHelp),className:"w-full text-center text-xs text-indigo-500 hover:text-indigo-700 flex items-center justify-center gap-1"},h(Icons.Info)," ¿Tienes dudas para ingresar o llenar el formato?"),
+        showHelp&&h('div',{className:"bg-indigo-50 border border-indigo-100 rounded-lg px-4 py-3 text-xs text-slate-600 space-y-2"},
+          h('p',null,h('strong',null,"1. Documento: "),"escribe tu número de documento de identidad, sin puntos ni espacios."),
+          h('p',null,h('strong',null,"2. PIN: "),"es el código que te entregó la institución (no es tu documento). Si no lo tienes o lo olvidaste, pídelo en secretaría o con tu coordinador(a)."),
+          h('p',null,h('strong',null,"3. Al ingresar: "),"vas a ver tu información dividida en pestañas (Situación Personal, Vivienda y Hogar, Historial Educativo, etc.). Puedes moverte entre ellas con los botones \"Anterior\" y \"Siguiente\" o dando clic directo en el nombre de la pestaña."),
+          h('p',null,h('strong',null,"4. Datos bloqueados: "),"tu nombre, tipo y número de documento y tu grado no se pueden editar aquí. Si están mal escritos, repórtalo a la institución, no lo cambies tú."),
+          h('p',null,h('strong',null,"5. Guardar: "),"revisa cada pestaña y al final da clic en \"Guardar mi información\". Si cierras sin guardar, los cambios no quedan."),
+          h('p',null,h('strong',null,"6. Padres/acudientes: "),"si estás llenando el formato en nombre de tu hijo(a), usa el documento y PIN del estudiante, no el tuyo.")
+        )
+      )
+    )
+  );
+}
+
+const MANAGED_ROLES=["admin","rector","coordinacion","orientacion","docente","auxiliar"];
+function InstConfigPanel({onClose,onSaved}){
+  const FIELDS=[
+    {id:"nombre",label:"Nombre de la institución"},
+    {id:"lema",label:"Lema institucional"},
+    {id:"licencia",label:"Licencia de funcionamiento"},
+    {id:"jornada",label:"Jornada"},
+    {id:"dane",label:"Código DANE"},
+    {id:"nit",label:"NIT"},
+    {id:"email",label:"Correo institucional"},
+    {id:"web",label:"Sitio web"},
+    {id:"dir",label:"Dirección"},
+    {id:"ciudad",label:"Ciudad"},
+    {id:"shieldUrl",label:"URL del escudo/logo (imagen)"}
+  ];
+  const [form,setForm]=useState(()=>({...II}));
+  const [saved,setSaved]=useState(false);
+  const [saving,setSaving]=useState(false);
+  const ic="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400";
+  async function save(){
+    setSaving(true);
+    const ok=await saveInstConfig(form);
+    setSaving(false);
+    if(ok){setSaved(true);onSaved&&onSaved();setTimeout(()=>setSaved(false),2500);}
+  }
+  return h('div',{className:"fixed inset-0 bg-black/40 z-50 flex items-center justify-center px-4 py-6 overflow-y-auto"},
+    h('div',{className:"bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 my-auto"},
+      h('div',{className:"flex items-center justify-between mb-5"},
+        h('h2',{className:"text-base font-semibold text-slate-800 flex items-center gap-2"},h(Icons.Settings),"Datos de la institución"),
+        h('button',{onClick:onClose,className:"text-slate-400 hover:text-slate-600"},h(Icons.X))
+      ),
+      h('p',{className:"text-xs text-slate-400 mb-4"},"Estos datos aparecen en el encabezado, el login y los formatos impresos (ficha, retiro, etc.). Se guardan en la base de datos, no en el código."),
+      h('div',{className:"space-y-3"},FIELDS.map(f=>h('div',{key:f.id},
+        h('label',{className:"block text-xs text-slate-500 mb-1"},f.label),
+        h('input',{value:form[f.id]||"",onChange:e=>setForm({...form,[f.id]:e.target.value}),className:ic})
+      ))),
+      saved&&h('div',{className:"bg-emerald-50 text-emerald-700 text-sm px-3 py-2 rounded-lg mt-4"},"✓ Datos institucionales guardados."),
+      h('div',{className:"flex justify-end gap-3 mt-5"},
+        h('button',{onClick:onClose,className:"px-4 py-2 border border-slate-200 rounded-lg text-sm hover:bg-slate-50"},"Cerrar"),
+        h('button',{disabled:saving,onClick:save,className:"px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700 flex items-center gap-1.5 disabled:opacity-60"},h(Icons.Save),saving?"Guardando...":"Guardar cambios")
+      )
+    )
+  );
+}
+
+function UserSettings({onClose,students,onGenMissingPins}){
+  const [saved,setSaved]=useState(false);
+  const [form,setForm]=useState(()=>{const o={};MANAGED_ROLES.forEach(r=>{o[r]={user:r,pass:""};});return o;});
+  const [show,setShow]=useState(()=>{const o={};MANAGED_ROLES.forEach(r=>{o[r]=false;});return o;});
+  const [generating,setGenerating]=useState(false);
+  useEffect(()=>{loadCreds().then(c=>{const n={};MANAGED_ROLES.forEach(r=>{n[r]={user:r,pass:""};});Object.entries(c).forEach(([u,v])=>{if(n[v.role])n[v.role]={user:u,pass:v.pass};});setForm(n);});},[]);
+  async function save(){for(const r of MANAGED_ROLES){if(!form[r].user||!form[r].pass)return;}const nc={};MANAGED_ROLES.forEach(r=>{nc[form[r].user.toLowerCase()]={pass:form[r].pass,role:r};});await saveCreds(nc);setSaved(true);setTimeout(()=>setSaved(false),2500);}
+  const ic="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400";
+
+  function exportCredsExcel(){
+    const rows=MANAGED_ROLES.map(r=>({"Rol":ROLE_LABELS[r],"Usuario":form[r].user,"Contraseña":form[r].pass}));
+    const ws=XLSX.utils.json_to_sheet(rows,{header:["Rol","Usuario","Contraseña"]});
+    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Credenciales");
+    XLSX.writeFile(wb,`Credenciales_Personal_${new Date().toISOString().slice(0,10)}.xlsx`);
+  }
+  function exportCredsPDF(){
+    const rows=MANAGED_ROLES.map(r=>`<tr><td>${ROLE_LABELS[r]}</td><td>${form[r].user}</td><td>${form[r].pass}</td></tr>`).join("");
+    const w=window.open("","_blank");
+    w.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Credenciales del personal</title><style>body{font-family:Arial,sans-serif;margin:24px;color:#1e293b;}table{width:100%;border-collapse:collapse;margin-top:16px;}th,td{border:1px solid #cbd5e1;padding:8px 10px;text-align:left;font-size:13px;}th{background:#f1f5f9;}@media print{button{display:none!important;}}</style></head><body><button onclick="window.print()" style="padding:7px 18px;background:#4f46e5;color:#fff;border:none;border-radius:7px;font-size:13px;cursor:pointer;">🖨️ Imprimir / Guardar PDF</button>${lhHtml()}<h2 style="font-size:16px;">Credenciales del personal - ${II.nombre}</h2><table><thead><tr><th>Rol</th><th>Usuario</th><th>Contraseña</th></tr></thead><tbody>${rows}</tbody></table><p style="font-size:10px;color:#94a3b8;margin-top:16px;">Documento confidencial. Generado el ${new Date().toLocaleDateString("es-CO")}.</p>${lfHtml()}</body></html>`);
+    w.document.close();
+  }
+  function exportPinsExcel(){
+    const rows=(students||[]).filter(s=>s.PIN).map(s=>({
+      "Nombre completo":[s.NOMBRE1,s.NOMBRE2,s.APELLIDO1,s.APELLIDO2].filter(Boolean).join(" "),
+      "Documento":s.NRO_DOCUMENTO||"",
+      "Grado":GRADO_OPTS.find(g=>g.value===s.GRADO)?.label?.split(" - ")[1]||s.GRADO||"",
+      "Año":s.ANNO_INF||"",
+      "PIN":s.PIN
+    }));
+    if(!rows.length){alert("No hay estudiantes con PIN asignado todavía.");return;}
+    const ws=XLSX.utils.json_to_sheet(rows,{header:["Nombre completo","Documento","Grado","Año","PIN"]});
+    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"PINs");
+    XLSX.writeFile(wb,`PINs_Estudiantes_${new Date().toISOString().slice(0,10)}.xlsx`);
+  }
+  function exportPinsPDF(){
+    const list=(students||[]).filter(s=>s.PIN);
+    if(!list.length){alert("No hay estudiantes con PIN asignado todavía.");return;}
+    const rows=list.map(s=>`<tr><td>${[s.NOMBRE1,s.NOMBRE2,s.APELLIDO1,s.APELLIDO2].filter(Boolean).join(" ")}</td><td>${s.NRO_DOCUMENTO||""}</td><td>${GRADO_OPTS.find(g=>g.value===s.GRADO)?.label?.split(" - ")[1]||s.GRADO||""}</td><td>${s.PIN}</td></tr>`).join("");
+    const w=window.open("","_blank");
+    w.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>PINs de estudiantes</title><style>body{font-family:Arial,sans-serif;margin:24px;color:#1e293b;}table{width:100%;border-collapse:collapse;margin-top:16px;}th,td{border:1px solid #cbd5e1;padding:6px 8px;text-align:left;font-size:12px;}th{background:#f1f5f9;}@media print{button{display:none!important;}}</style></head><body><button onclick="window.print()" style="padding:7px 18px;background:#4f46e5;color:#fff;border:none;border-radius:7px;font-size:13px;cursor:pointer;">🖨️ Imprimir / Guardar PDF</button>${lhHtml()}<h2 style="font-size:16px;">PINs de acceso de estudiantes - ${II.nombre}</h2><table><thead><tr><th>Nombre completo</th><th>Documento</th><th>Grado</th><th>PIN</th></tr></thead><tbody>${rows}</tbody></table><p style="font-size:10px;color:#94a3b8;margin-top:16px;">Documento confidencial. Generado el ${new Date().toLocaleDateString("es-CO")}.</p>${lfHtml()}</body></html>`);
+    w.document.close();
+  }
+
+  return h('div',{className:"fixed inset-0 bg-black/40 z-50 flex items-center justify-center px-4 py-6 overflow-y-auto"},
+    h('div',{className:"bg-white rounded-2xl shadow-xl w-full max-w-md p-6 my-auto"},
+      h('div',{className:"flex items-center justify-between mb-5"},
+        h('h2',{className:"text-base font-semibold text-slate-800 flex items-center gap-2"},h(Icons.Key),"Gestión de usuarios"),
+        h('button',{onClick:onClose,className:"text-slate-400 hover:text-slate-600"},h(Icons.X))
+      ),
+      MANAGED_ROLES.map(r=>h('div',{className:"mb-4",key:r},
+        h('span',{className:`text-xs font-semibold px-2 py-0.5 rounded-full ${ROLE_TAG[r]}`},ROLE_LABELS[r]),
+        h('div',{className:"grid grid-cols-2 gap-3 mt-2"},
+          h('div',null,h('label',{className:"block text-xs text-slate-500 mb-1"},"Usuario"),h('input',{value:form[r].user,onChange:e=>setForm({...form,[r]:{...form[r],user:e.target.value}}),className:ic})),
+          h('div',null,h('label',{className:"block text-xs text-slate-500 mb-1"},"Contraseña"),
+            h('div',{className:"relative"},
+              h('input',{type:show[r]?"text":"password",value:form[r].pass,onChange:e=>setForm({...form,[r]:{...form[r],pass:e.target.value}}),className:ic+" pr-14"}),
+              h('button',{type:"button",onClick:()=>setShow({...show,[r]:!show[r]}),className:"absolute right-2 top-2 text-xs text-slate-400"},show[r]?"Ocultar":"Ver")
+            )
+          )
+        )
+      )),
+      saved&&h('div',{className:"bg-emerald-50 text-emerald-700 text-sm px-3 py-2 rounded-lg mb-4"},"✓ Credenciales guardadas."),
+      h('div',{className:"flex justify-end gap-3 mb-5"},
+        h('button',{onClick:onClose,className:"px-4 py-2 border border-slate-200 rounded-lg text-sm hover:bg-slate-50"},"Cerrar"),
+        h('button',{onClick:save,className:"px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700 flex items-center gap-1.5"},h(Icons.Save),"Guardar cambios")
+      ),
+
+      h('div',{className:"border-t border-slate-100 pt-4"},
+        h('p',{className:"text-xs font-semibold text-slate-500 mb-2"},"Reporte de credenciales del personal"),
+        h('div',{className:"flex gap-2 mb-4"},
+          h('button',{onClick:exportCredsExcel,className:"flex-1 flex items-center justify-center gap-1.5 px-3 py-2 border border-slate-200 rounded-lg text-sm hover:bg-slate-50"},h(Icons.Download),"Excel"),
+          h('button',{onClick:exportCredsPDF,className:"flex-1 flex items-center justify-center gap-1.5 px-3 py-2 border border-slate-200 rounded-lg text-sm hover:bg-slate-50"},h(Icons.Print),"PDF")
+        ),
+        h('p',{className:"text-xs font-semibold text-slate-500 mb-2"},"Reporte de PINs de estudiantes"),
+        h('div',{className:"flex gap-2 mb-2"},
+          h('button',{onClick:exportPinsExcel,className:"flex-1 flex items-center justify-center gap-1.5 px-3 py-2 border border-slate-200 rounded-lg text-sm hover:bg-slate-50"},h(Icons.Download),"Excel"),
+          h('button',{onClick:exportPinsPDF,className:"flex-1 flex items-center justify-center gap-1.5 px-3 py-2 border border-slate-200 rounded-lg text-sm hover:bg-slate-50"},h(Icons.Print),"PDF")
+        ),
+        onGenMissingPins&&h('button',{onClick:async()=>{setGenerating(true);await onGenMissingPins();setGenerating(false);},disabled:generating,className:"w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-amber-50 border border-amber-200 text-amber-700 rounded-lg text-sm hover:bg-amber-100 disabled:opacity-60"},generating?"Generando...":"Generar PINs faltantes (estudiantes importados)"),
+        h('p',{className:"text-[11px] text-slate-400 mt-2"},"Estos reportes contienen contraseñas y PINs en texto plano. Consérvalos con cuidado.")
+      )
+    )
+  );
+}
+
+function StudentCard({student,onClose}){
+  const nombre=[student.NOMBRE1,student.NOMBRE2,student.APELLIDO1,student.APELLIDO2].filter(Boolean).join(" ");
+  const grado=GRADO_OPTS.find(g=>g.value===student.GRADO)?.label?.split(" - ")[1]||student.GRADO||"—";
+  const isR=student.ESTADO==="RETIRADO";
+  return h('div',{className:"space-y-4"},
+    h('div',{className:"flex items-center justify-between flex-wrap gap-2"},
+      h('button',{onClick:onClose,className:"flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800"},h(Icons.ChevL),"Volver"),
+      h('div',{className:"flex gap-2"},
+        isR&&h('button',{onClick:()=>printRetiro(student),className:"flex items-center gap-1.5 px-4 py-2 bg-rose-600 text-white rounded-lg text-sm hover:bg-rose-700"},h(Icons.File),"Formato de retiro"),
+        h('button',{onClick:()=>printCard(student),className:"flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700"},h(Icons.Print),"Ver ficha")
+      )
+    ),
+    h('div',{className:"bg-white rounded-xl border border-slate-200 p-6 space-y-6"},
+      h('div',{className:"flex items-start gap-4 border-b border-slate-100 pb-4"},
+        h('div',{className:"w-14 h-14 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-xl flex-shrink-0"},(student.NOMBRE1||"?")[0],(student.APELLIDO1||"")[0]),
+        h('div',null,
+          h('h2',{className:"text-xl font-bold text-slate-800 flex items-center gap-2"},nombre||"Sin nombre",estadoBadge(student.ESTADO)),
+          h('p',{className:"text-sm text-slate-500"},(TIPO_DOC_OPTS.find(o=>o.value===student.TIPO_DOCUMENTO)?.label?.split(" - ")[1]||"Doc"),": ",student.NRO_DOCUMENTO||"—"," · Grado: ",h('strong',null,grado)," · Año: ",h('strong',null,student.ANNO_INF||"—"))
+        )
+      ),
+      SECTIONS.map(sec=>{
+        if(sec.id==="desercion"&&!isR)return h('div',{key:sec.id},h('h3',{className:"text-sm font-semibold text-indigo-700 uppercase tracking-wide mb-2 border-b border-indigo-50 pb-1"},sec.label),h('p',{className:"text-xs text-slate-400 italic"},"No aplica — el estudiante está matriculado."));
+        const fields=FIELD_DEFS.filter(f=>f.section===sec.id&&!f.hidden);
+        return h('div',{key:sec.id},
+          h('h3',{className:"text-sm font-semibold text-indigo-700 uppercase tracking-wide mb-2 border-b border-indigo-50 pb-1"},sec.label),
+          h('div',{className:"grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1"},
+            fields.map(f=>{
+              const raw=student[f.id];let d;
+              if(f.type==="dependent_select"){const o=(CAUSAS_MAP[student.RAZON_DESERCION]||[]).find(o=>o.value===raw);const l=o?o.label:raw||"—";d=l.includes(" - ")?l.split(" - ").slice(1).join(" - "):l;}
+              else{d=resolveLabel(f,raw);}
+              const wide=f.type==="textarea"||f.type==="multicheck";
+              return h('div',{key:f.id,className:`py-1 ${wide?"sm:col-span-2":""}`},h('span',{className:"text-xs text-slate-400 block"},f.label),h('span',{className:"text-sm text-slate-800 font-medium"},d));
+            })
+          )
+        );
+      }),
+      h('p',{className:"text-xs text-slate-300 text-right"},"Generado el ",new Date().toLocaleDateString("es-CO"))
+    )
+  );
+}
+
+function MiniBar({data,height=200}){
+  if(!data||!data.length)return h('div',{className:"flex items-center justify-center h-32 text-sm text-slate-400"},"Sin datos suficientes.");
+  return h(ResponsiveContainer,{width:"100%",height},
+    h(BarChart,{data,margin:{top:8,right:8,left:0,bottom:8}},
+      h(CartesianGrid,{strokeDasharray:"3 3",vertical:false,stroke:"#e2e8f0"}),
+      h(XAxis,{dataKey:"name",tick:{fontSize:10},interval:0,angle:-20,textAnchor:"end",height:50}),
+      h(YAxis,{allowDecimals:false,tick:{fontSize:10}}),
+      h(Tooltip),
+      h(Bar,{dataKey:"total",fill:"#4f46e5",radius:[5,5,0,0]},h(LabelList,{dataKey:"total",position:"top",style:{fontSize:10,fill:"#475569"}}))
+    )
+  );
+}
+
+function ReportsView({students}){
+  const [selYear,setSelYear]=useState("");
+  const years=Array.from(new Set(students.map(s=>s.ANNO_INF).filter(Boolean))).sort((a,b)=>Number(b)-Number(a));
+  const data=selYear?students.filter(s=>s.ANNO_INF===selYear):students;
+  const total=data.length,alto=data.filter(s=>riskCount(s)>=3).length;
+  const emb=data.filter(s=>s.EMBARAZO==="S"&&s.ESTADO!=="RETIRADO").length;
+  const ret=data.filter(s=>s.ESTADO==="RETIRADO").length;
+  const mat=data.filter(s=>s.ESTADO!=="RETIRADO").length;
+  const gL=v=>GRADO_OPTS.find(g=>g.value===v)?.label?.split(" - ")[1]||v;
+  const rL=v=>RAZON_DESERCION_OPTS.find(o=>o.value===v)?.label?.split(" - ")[1]||v;
+  const aL=v=>ASIGNATURAS_OPTS.find(o=>o.value===v)?.label?.split(" - ")[1]||v;
+  const nL=v=>NIVEL_EDU_OPTS.find(o=>o.value===v)?.label?.split(" - ")[1]||v;
+  const gradoD=countBy(data,"GRADO").sort((a,b)=>GRADO_OPTS.findIndex(g=>g.value===a.name)-GRADO_OPTS.findIndex(g=>g.value===b.name)).map(d=>({...d,name:gL(d.name)}));
+  const riesgoD=RISK_FIELDS.map(f=>({name:FIELD_DEFS.find(d=>d.id===f)?.label.replace("¿","").replace("?","").trim()||f,total:data.filter(s=>s[f]==="S"&&s.ESTADO!=="RETIRADO").length})).filter(d=>d.total>0).sort((a,b)=>b.total-a.total);
+  const razonD=countBy(data.filter(s=>s.ESTADO==="RETIRADO"),"RAZON_DESERCION").map(d=>({...d,name:rL(d.name)}));
+  const asigD=countMulti(data,["ASIG_PERIODO_1","ASIG_PERIODO_2"]).map(d=>({...d,name:aL(d.name)})).slice(0,9);
+  const nivelD=countBy(data,"NIVEL_EDUCATIVO").map(d=>({...d,name:nL(d.name)})).sort((a,b)=>b.total-a.total);
+  const Card=({label,value,accent})=>h('div',{className:"bg-white rounded-xl border border-slate-200 p-4"},h('p',{className:"text-xs text-slate-500"},label),h('p',{className:`text-2xl font-semibold mt-1 ${accent||"text-slate-800"}`},value));
+  const Chart=({title,data:d})=>h('div',{className:"bg-white rounded-xl border border-slate-200 p-4"},h('p',{className:"text-sm font-medium text-slate-700 mb-2"},title),h(MiniBar,{data:d}));
+  return h('div',{className:"space-y-4"},
+    h('div',{className:"flex items-center justify-between flex-wrap gap-3"},
+      h('h2',{className:"text-base font-semibold text-slate-700"},"Reportes dinámicos"),
+      h('div',{className:"flex items-center gap-2"},
+        h('label',{className:"text-sm text-slate-500"},"Año:"),
+        h('select',{value:selYear,onChange:e=>setSelYear(e.target.value),className:"border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"},
+          h('option',{value:""},"Todos los años"),
+          years.map(y=>h('option',{key:y,value:y},y))
+        ),
+        selYear&&h('button',{onClick:()=>setSelYear(""),className:"text-xs text-rose-500 border border-rose-200 rounded-lg px-2 py-1.5 hover:bg-rose-50"},"✕ Limpiar")
+      )
+    ),
+    selYear&&h('div',{className:"bg-indigo-50 border border-indigo-100 rounded-lg px-4 py-2 text-sm text-indigo-700"},"Año ",h('strong',null,selYear)," · ",total," estudiante(s)"),
+    h('div',{className:"grid grid-cols-2 md:grid-cols-5 gap-3"},
+      h(Card,{label:"Total estudiantes",value:total}),
+      h(Card,{label:"Matriculados",value:mat,accent:"text-indigo-600"}),
+      h(Card,{label:"Retirados",value:ret,accent:"text-rose-600"}),
+      h(Card,{label:"Riesgo alto (matriculados)",value:alto,accent:"text-rose-600"}),
+      h(Card,{label:"En embarazo (matriculados)",value:emb,accent:"text-amber-600"})
+    ),
+    total===0
+      ?h('div',{className:"bg-white rounded-xl border border-slate-200 p-10 text-center text-slate-400"},selYear?`No hay datos para el año ${selYear}.`:"Registra estudiantes para ver los reportes.")
+      :h('div',{className:"grid grid-cols-1 md:grid-cols-2 gap-4"},
+          h(Chart,{title:"Estudiantes por grado",data:gradoD}),
+          h(Chart,{title:"Factores de riesgo (matriculados)",data:riesgoD}),
+          h(Chart,{title:"Razones de deserción (retirados)",data:razonD}),
+          h(Chart,{title:"Asignaturas con más pérdidas",data:asigD}),
+          h(Chart,{title:"Nivel educativo de los acudientes",data:nivelD})
+        )
+  );
+}
+
+// ═══════════════════════════════════════════
+// APP PRINCIPAL
+// ═══════════════════════════════════════════
+function StudentSelfView({studentId,onLogout}){
+  const [data,setData]=useState(null);
+  const [saving,setSaving]=useState(false);
+  const [saved,setSaved]=useState(false);
+  const [error,setError]=useState("");
+  const [activeSection,setActiveSection]=useState(0);
+  const STUDENT_SECTIONS=SECTIONS.filter(s=>s.id!=="desercion");
+
+  useEffect(()=>{
+    if(!studentsCol){setError("Base de datos no disponible.");return;}
+    const unsub=studentsCol.doc(studentId).onSnapshot(snap=>{
+      if(snap.exists)setData({...snap.data(),_id:snap.id});
+      else setError("Tu registro ya no está disponible. Contacta a la institución.");
+    },err=>{console.error(err);setError("Error de conexión.");});
+    return ()=>unsub();
+  },[studentId]);
+
+  function hChange(fid,val){setData(p=>({...p,[fid]:val}));}
+
+  async function save(){
+    if(!data)return;
+    setSaving(true);setError("");
+    try{
+      // Solo actualiza los campos que el estudiante puede editar; nunca toca identificación, ESTADO ni PIN.
+      const editable={};
+      FIELD_DEFS.forEach(f=>{if(!f.studentLocked&&!f.adminOnly)editable[f.id]=data[f.id]??"";});
+      await studentsCol.doc(studentId).update(editable);
+      setSaved(true);setTimeout(()=>setSaved(false),3000);
+    }catch(e){console.error(e);setError("No se pudo guardar. Intenta de nuevo.");}
+    finally{setSaving(false);}
+  }
+
+  if(error&&!data)return h('div',{className:"min-h-screen bg-slate-50 flex items-center justify-center px-4"},
+    h('div',{className:"bg-white rounded-2xl shadow p-6 max-w-sm text-center"},
+      h('p',{className:"text-rose-600 text-sm mb-4"},error),
+      h('button',{onClick:onLogout,className:"px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm"},"Volver al login")
+    )
+  );
+  if(!data)return h('div',{className:"min-h-screen flex items-center justify-center text-slate-400 text-sm"},"Cargando tu información...");
+
+  const nombre=[data.NOMBRE1,data.NOMBRE2,data.APELLIDO1,data.APELLIDO2].filter(Boolean).join(" ");
+
+  return h('div',{className:"min-h-screen bg-slate-50 text-slate-800"},
+    h('header',{className:"bg-gradient-to-r from-indigo-600 to-blue-600 text-white px-4 sm:px-6 py-4 shadow-md"},
+      h('div',{className:"max-w-3xl mx-auto flex items-center justify-between flex-wrap gap-3"},
+        h('div',null,
+          h('h1',{className:"text-lg font-semibold"},"Mi información - "+II.nombre),
+          h('p',{className:"text-xs text-white/80 mt-0.5"},nombre)
+        ),
+        h('button',{onClick:onLogout,className:"px-3 py-1.5 rounded-lg text-sm font-medium bg-white/10 hover:bg-white/20 border border-white/30"},"Salir")
+      )
+    ),
+    h('main',{className:"max-w-3xl mx-auto px-4 py-6 space-y-4"},
+      h('div',{className:"bg-amber-50 border border-amber-200 text-amber-700 text-sm rounded-lg px-4 py-3"},
+        "Actualiza tu información cada año. Tu nombre, documento y tipo de documento no se pueden modificar aquí; si hay un error en esos datos, contacta a la institución."
+      ),
+      h('div',{className:"flex gap-1 flex-wrap"},STUDENT_SECTIONS.map((sec,i)=>h('button',{key:sec.id,onClick:()=>setActiveSection(i),className:`px-3 py-1.5 rounded-full text-sm whitespace-nowrap ${activeSection===i?"bg-indigo-600 text-white":"bg-slate-100 text-slate-600 hover:bg-slate-200"}`},sec.label))),
+      h('div',{className:"bg-white rounded-xl border border-slate-200 p-5"},
+        h('div',{className:"grid grid-cols-1 md:grid-cols-2 gap-4"},
+          FIELD_DEFS.filter(f=>f.section===STUDENT_SECTIONS[activeSection].id&&!f.hidden&&!f.adminOnly).map(f=>
+            h(FieldRenderer,{key:f.id,field:f,value:data[f.id],onChange:v=>hChange(f.id,v),parentValue:f.dependsOn?data[f.dependsOn]:undefined,disabled:!!f.studentLocked})
+          )
+        )
+      ),
+      error&&h('div',{className:"bg-rose-50 text-rose-600 text-xs px-3 py-2 rounded-lg"},error),
+      saved&&h('div',{className:"bg-emerald-50 text-emerald-700 text-sm px-4 py-3 rounded-lg flex items-center justify-between flex-wrap gap-2"},
+        h('span',null,"✓ Tu información fue actualizada."),
+        h('button',{onClick:()=>printCard(data),className:"flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs hover:bg-emerald-700"},h(Icons.Print),"Ver / descargar mi ficha")
+      ),
+      h('div',{className:"flex justify-between flex-wrap gap-3"},
+        h('div',{className:"flex gap-2"},
+          h('button',{disabled:activeSection===0,onClick:()=>setActiveSection(s=>s-1),className:"flex items-center gap-1 px-3 py-2 border rounded-lg text-sm disabled:opacity-40"},h(Icons.ChevL),"Anterior"),
+          h('button',{disabled:activeSection===STUDENT_SECTIONS.length-1,onClick:()=>setActiveSection(s=>s+1),className:"flex items-center gap-1 px-3 py-2 border rounded-lg text-sm disabled:opacity-40"},"Siguiente",h(Icons.ChevR))
+        ),
+        h('div',{className:"flex gap-2"},
+          h('button',{onClick:()=>printCard(data),className:"flex items-center gap-1.5 px-4 py-2 border border-indigo-200 text-indigo-600 rounded-lg text-sm hover:bg-indigo-50"},h(Icons.Print),"Ver mi ficha"),
+          h('button',{disabled:saving,onClick:save,className:"flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700 disabled:opacity-60"},h(Icons.Save),saving?"Guardando...":"Guardar mi información")
+        )
+      )
+    )
+  );
+}
+
+function App(){
+  const [session,setSession]=useState(null);
+  const [students,setStudents]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [view,setView]=useState("list");
+  const [search,setSearch]=useState("");
+  const [filterAnio,setFilterAnio]=useState("");
+  const [filterGrado,setFilterGrado]=useState("");
+  const [filterRiesgo,setFilterRiesgo]=useState("");
+  const [filterFactor,setFilterFactor]=useState("");
+  const [filterEstado,setFilterEstado]=useState("");
+  const [page,setPage]=useState(1);
+  const [editingId,setEditingId]=useState(null);
+  const [formData,setFormData]=useState(emptyStudent());
+  const [activeSection,setActiveSection]=useState(0);
+  const [statusMsg,setStatusMsg]=useState("");
+  const [statusError,setStatusError]=useState(false);
+  const [importing,setImporting]=useState(false);
+  const [confirmDeleteId,setConfirmDeleteId]=useState(null);
+  const [viewingStudent,setViewingStudent]=useState(null);
+  const [showSettings,setShowSettings]=useState(false);
+  const [showInstConfig,setShowInstConfig]=useState(false);
+  const [instVersion,setInstVersion]=useState(0);
+  const [showSimpadeMenu,setShowSimpadeMenu]=useState(false);
+  const [confirmClearDB,setConfirmClearDB]=useState(false);
+  const [importResult,setImportResult]=useState(null);
+  const fileRef=useRef(null);
+  const stRef=useRef(null);
+  const PAGE=10;
+
+  useEffect(()=>{loadInstConfig().then(()=>setInstVersion(v=>v+1));},[]);
+
+  useEffect(()=>{
+    if(studentsCol){
+      // Listener en tiempo real: cualquier cambio de cualquier usuario se refleja al instante, sin recargar.
+      const unsub=studentsCol.onSnapshot(snap=>{
+        const list=snap.docs.map(d=>({...d.data(),_id:d.id}));
+        setStudents(list);
+        setLoading(false);
+      },err=>{console.error(err);showSt("Error de sincronización con la base de datos.",true);setLoading(false);});
+      return ()=>unsub();
+    } else {
+      // Sin Firebase: fallback a localStorage (modo offline, un solo navegador)
+      (async()=>{try{if(appStorage){const r=await appStorage.get("students-data");if(r?.value)setStudents(JSON.parse(r.value));}}catch{}finally{setLoading(false);}})();
+    }
+  },[]);
+
+  if(!session)return h(LoginScreen,{onLogin:setSession});
+  const role=session.role;
+  if(role==="estudiante")return h(StudentSelfView,{studentId:session.studentId,onLogout:()=>setSession(null)});
+  const isAdmin=role==="admin";
+  const canManageUsers=role==="admin"||role==="rector";
+  const canManageEstado=["admin","rector","coordinacion","orientacion"].includes(role);
+  const canDelete=["admin","coordinacion"].includes(role);
+  const canIE=role==="admin";
+  const canEditStudents=["admin","auxiliar","coordinacion"].includes(role);
+
+  function showSt(msg,isError=false){setStatusMsg(msg);setStatusError(isError);if(stRef.current)clearTimeout(stRef.current);stRef.current=setTimeout(()=>setStatusMsg(""),4000);}
+  async function persist(list){try{await appStorage.set("students-data",JSON.stringify(list));}catch(e){console.error(e);}} // solo fallback localStorage
+  function hChange(fid,val){setFormData(p=>{const n={...p,[fid]:val};if(fid==="RAZON_DESERCION")n.CAUSAS="";if(fid==="ESTADO"&&val!=="RETIRADO"){n.RAZON_DESERCION="";n.CAUSAS="";n.ES_LA_RAZON="";n.FECHA_RETIRO="";n.RAZON_DESERCION_OTRAS="";}return n;});}
+  function startNew(){setFormData(emptyStudent());setEditingId(null);setActiveSection(0);setView("form");}
+  function startEdit(s){setFormData(s);setEditingId(s._id);setActiveSection(0);setView("form");}
+  async function hSave(){
+    if(!canEditStudents){showSt("Tu rol solo tiene permiso de lectura.",true);return;}
+    const id=editingId||`${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    if(!formData.PIN){const auto=genPin(formData);if(auto)formData.PIN=auto;}
+    const data={...formData,_id:id};
+    try{
+      if(studentsCol){
+        await studentsCol.doc(id).set(data); // escribe SOLO este estudiante; no toca a los demás
+      }else{
+        const list=editingId?students.map(s=>s._id===id?data:s):[...students,data];
+        setStudents(list);await persist(list);
+      }
+      showSt(editingId?"Estudiante actualizado correctamente.":"Estudiante guardado correctamente.");
+      setView("list");
+    }catch(e){console.error(e);showSt("No se pudo guardar. Verifica tu conexión e inténtalo de nuevo.",true);}
+  }
+  async function hDelete(id){
+    if(!canDelete){showSt("Tu rol no tiene permiso para eliminar estudiantes.",true);return;}
+    try{
+      if(studentsCol){
+        await studentsCol.doc(id).delete();
+      }else{
+        const list=students.filter(s=>s._id!==id);setStudents(list);await persist(list);
+      }
+      setConfirmDeleteId(null);
+      showSt("Estudiante eliminado.");
+    }catch(e){console.error(e);showSt("No se pudo eliminar. Inténtalo de nuevo.",true);}
+  }
+  async function hClear(){
+    try{
+      if(studentsCol){
+        const snap=await studentsCol.get();
+        let batch=db.batch();let n=0;
+        for(const doc of snap.docs){batch.delete(doc.ref);n++;if(n%450===0){await batch.commit();batch=db.batch();}}
+        await batch.commit();
+      }else{
+        setStudents([]);await persist([]);
+      }
+      setConfirmClearDB(false);
+      showSt("Base de datos eliminada.");
+    }catch(e){console.error(e);showSt("No se pudo eliminar la base de datos.",true);}
+  }
+
+  function hImport(e){
+    const file=e.target.files?.[0];if(!file)return;setImporting(true);
+    const reader=new FileReader();
+    reader.onload=async(evt)=>{try{
+      const wb=XLSX.read(new Uint8Array(evt.target.result),{type:"array"});
+      const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:""});
+      const keyOf=(t,n,a)=>`${(t||"").trim()}|${(n||"").trim()}|${(a||"").trim()}`;
+      const existing=new Set(students.filter(s=>(s.NRO_DOCUMENTO||"").trim()).map(s=>keyOf(s.TIPO_DOCUMENTO,s.NRO_DOCUMENTO,s.ANNO_INF)));
+      const seen=new Set();const imported=[],rejected=[];
+      rows.forEach((row,idx)=>{
+        const obj=emptyStudent();Object.keys(row).forEach(k=>{const fid=FIELD_KEY_MAP[normalizeKey(k)];if(fid)obj[fid]=String(row[k]??"").trim();});if(!obj.ESTADO)obj.ESTADO="MATRICULADO";
+        const doc=(obj.NRO_DOCUMENTO||"").trim();
+        const nombre=[obj.NOMBRE1,obj.NOMBRE2,obj.APELLIDO1,obj.APELLIDO2].filter(Boolean).join(" ")||`Fila ${idx+2}`;
+        if(!doc&&!obj.NOMBRE1&&!obj.APELLIDO1){rejected.push({nombre,doc:"—",razon:"Fila sin documento ni nombre"});return;}
+        if(doc){const key=keyOf(obj.TIPO_DOCUMENTO,doc,obj.ANNO_INF);if(existing.has(key)){rejected.push({nombre,doc,razon:"Ya existe en la base de datos (mismo año)"});return;}if(seen.has(key)){rejected.push({nombre,doc,razon:"Duplicado dentro del archivo Excel"});return;}seen.add(key);}
+        if(!obj.PIN){const auto=genPin(obj);if(auto)obj.PIN=auto;}
+        obj._id=`${Date.now()}_${Math.random().toString(36).slice(2)}`;imported.push(obj);
+      });
+      if(imported.length){
+        if(studentsCol){
+          let batch=db.batch();let n=0;
+          for(const obj of imported){batch.set(studentsCol.doc(obj._id),obj);n++;if(n%450===0){await batch.commit();batch=db.batch();}}
+          await batch.commit();
+        }else{
+          const m=[...students,...imported];setStudents(m);await persist(m);
+        }
+      }
+      setImportResult({imported:imported.length,rejected});
+      showSt(imported.length?`${imported.length} importado(s). ${rejected.length} no importado(s).`:"No se importó ningún registro.",rejected.length>0&&imported.length===0);
+    }catch(err){console.error(err);showSt("No se pudo leer el archivo.",true);}finally{setImporting(false);}};
+    reader.onerror=()=>{setImporting(false);showSt("Error al leer el archivo.",true);};reader.readAsArrayBuffer(file);e.target.value="";
+  }
+
+  function hExport(){if(!students.length){showSt("No hay registros.",true);return;}const h2=FIELD_DEFS.map(f=>f.id);const rows=students.map(s=>{const r={};h2.forEach(k=>{r[k]=s[k]||"";});return r;});const ws=XLSX.utils.json_to_sheet(rows,{header:h2});const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Estudiantes");XLSX.writeFile(wb,`estudiantes_${new Date().toISOString().slice(0,10)}.xlsx`);showSt("Excel exportado.");}
+  function dlS(name,headers,rows){const ws=XLSX.utils.json_to_sheet(rows,{header:headers});Object.keys(ws).forEach(c=>{if(c[0]==="!")return;const x=ws[c];if(x.t==="n"){x.t="s";x.v=String(x.v);delete x.w;}});const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Datos");XLSX.writeFile(wb,`${name}_${new Date().toISOString().slice(0,10)}.xlsx`);showSt("SIMPADE exportado.");}
+  function mR(list,h2){return list.map(s=>{const r={};h2.forEach(k=>{r[k]=s[k]||"";});return r;});}
+  function xS1(){const h2=["ANNO_INF","PER_ID","TIPO_DOCUMENTO","NRO_DOCUMENTO","APELLIDO1","APELLIDO2","NOMBRE1","NOMBRE2","EMBARAZO","ABANDONOS_TEMPORALES","REPETIDA_GRADO_ACTUAL","ANTECE_DISC_VIDA_ACA","ASISTENCIA_ANNO_ANTERIOR","ESTRATEGIAS_DEBERIA_TENER"];dlS("1_INFORMACION_NO_MIGRADA_ESTUDIANTE",h2,mR(students,h2));}
+  function xS2(){const h2=["ANNO_INF","PER_ID","TIPO_DOCUMENTO","NRO_DOCUMENTO","APELLIDO1","APELLIDO2","NOMBRE1","NOMBRE2","ASIGNATURA","PERIODO","PERDIO"];const rows=[];students.forEach(s=>{[["ASIG_PERIODO_1","1"],["ASIG_PERIODO_2","2"]].forEach(([f,p])=>{(s[f]||"").split("|").filter(Boolean).forEach(c=>{rows.push({ANNO_INF:s.ANNO_INF||"",PER_ID:s.PER_ID||"",TIPO_DOCUMENTO:s.TIPO_DOCUMENTO||"",NRO_DOCUMENTO:s.NRO_DOCUMENTO||"",APELLIDO1:s.APELLIDO1||"",APELLIDO2:s.APELLIDO2||"",NOMBRE1:s.NOMBRE1||"",NOMBRE2:s.NOMBRE2||"",ASIGNATURA:c,PERIODO:p,PERDIO:"S"});});});});if(!rows.length){showSt("No hay asignaturas perdidas.",true);return;}dlS("2_CARGUE_ASIGNATURAS_NO_APROBADAS_POR_PERIODO",h2,rows);}
+  function xS3(){const h2=["ANNO_INF","PER_ID","TIPO_DOCUMENTO","NRO_DOCUMENTO","APELLIDO1","APELLIDO2","NOMBRE1","NOMBRE2","VIVE_SOLO","EMBARAZO","TRABAJA","MAT_PAT_TEMPRANA_EDAD","VICTIMA_DISCRIMINACION","VICTIMA_AGRESIONES","DISCRIMINACION","DISCRIMINACION_OTRA","TIENE_DEFINIDO_ESTUDIAR","QUE_DESEA_ESTUDIAR","NUMERO_PERSONAS_HOGAR","VIVIENDA_TIPO","VIVIENDA_PROPIEDAD","SERVICIOS_VIVIENDA","EDUCACION_PREESCOLAR","ANOS_EDUCACION_PREESCOLAR","RET_EST_SIN_TERMINAR_ANO_ESC","MESES_POR_FUERA_SIS_EDUCATIVO","ABANDONOS_TEMPORALES","REPETIDA_ANO","VECES_REPETIDA_ANO","REPETIDA_GRADO_ACTUAL","ANTECE_DISC_VIDA_ACA","ASISTENCIA_ANNO_ANTERIOR","DIFICULTADES_APRENDIZAJE","VINCULADO_MOD_EDU_INICIAL","ASIG_PERIODO_1","ASIG_PERIODO_2","ESTRATEGIAS_DEBERIA_TENER"];dlS("3_CARGUE_INFORMACION_COMPLETA_ESTUDIANTE",h2,mR(students,h2));}
+  function xS4(){const ret=students.filter(s=>s.ESTADO==="RETIRADO");if(!ret.length){showSt("No hay retirados.",true);return;}const h2=["ANNO_INF","PER_ID","TIPO_DOCUMENTO","NRO_DOCUMENTO","APELLIDO1","APELLIDO2","NOMBRE1","NOMBRE2","RAZON_DESERCION","CAUSAS","ES_LA_RAZON","RAZON_DESERCION_OTRAS"];dlS("4_CARGUE_RAZONES_DESERCION_ESTUDIANTE",h2,mR(ret,h2));}
+  function xS5(){const h2=["ANNO_INF","PER_ID","TIPO_DOCUMENTO","NRO_DOCUMENTO","APELLIDO1","APELLIDO2","NOMBRE1","NOMBRE2","TIPO_DOCUMENTO_FAMILIAR","NRO_DOCUMENTO_FAMILAIR","APELLIDO1_FAMILIAR","APELLIDO2_FAMILIAR","NOMBRE1_FAMILIAR","NOMBRE2_FAMILIAR","NIVEL_EDUCATIVO","ASISTE_REU_DIF_BOLETIN","ASISTE_ENTREGA_INFORMES","TIPO_EMPLEO","FRECUENCIA_CAMBIO_DOMIC"];dlS("5_CARGUE_INFORMACION_FAMILIARES_ESTUDIANTE",h2,mR(students,h2));}
+  function xRiesgo(){
+    const ar=students.filter(s=>riskCount(s)>=1).sort((a,b)=>riskCount(b)-riskCount(a));
+    if(!ar.length){showSt("No hay estudiantes en riesgo.",true);return;}
+    const rl=RISK_FIELDS.map(f=>(FIELD_DEFS.find(d=>d.id===f)?.label||f).replace("¿","").replace("?","").trim());
+    const h2=["Tipo Documento","Número Documento","Nombre Completo","Grado","Año","Estado","Nivel de Riesgo","Cantidad de Factores",...rl];
+    const rows=ar.map(s=>{const rc=riskCount(s);const r={"Tipo Documento":TIPO_DOC_OPTS.find(o=>o.value===s.TIPO_DOCUMENTO)?.label?.split(" - ")[1]||s.TIPO_DOCUMENTO||"","Número Documento":s.NRO_DOCUMENTO||"","Nombre Completo":[s.NOMBRE1,s.NOMBRE2,s.APELLIDO1,s.APELLIDO2].filter(Boolean).join(" "),"Grado":GRADO_OPTS.find(g=>g.value===s.GRADO)?.label?.split(" - ")[1]||s.GRADO||"","Año":s.ANNO_INF||"","Estado":"Matriculado","Nivel de Riesgo":rc>=3?"Alto":"Medio","Cantidad de Factores":rc};RISK_FIELDS.forEach((f,i)=>{r[rl[i]]=s[f]==="S"?"Sí":"No";});return r;});
+    dlS("Reporte_Estudiantes_En_Riesgo",h2,rows);
+  }
+
+  async function hGenMissingPins(){
+    const missing=students.filter(s=>!s.PIN);
+    if(!missing.length){showSt("Todos los estudiantes ya tienen PIN.");return 0;}
+    if(studentsCol){
+      let batch=db.batch();let n=0;
+      for(const s of missing){const p=genPin(s);if(p){batch.update(studentsCol.doc(s._id),{PIN:p});n++;if(n%450===0){await batch.commit();batch=db.batch();}}}
+      await batch.commit();
+    }
+    showSt(`PIN generado para ${missing.length} estudiante(s).`);
+    return missing.length;
+  }
+
+  const filtered=students.filter(s=>{
+    const name=`${s.NOMBRE1||""} ${s.NOMBRE2||""} ${s.APELLIDO1||""} ${s.APELLIDO2||""}`.toLowerCase();
+    const rc=riskCount(s);
+    return(!search||name.includes(search.toLowerCase())||(s.NRO_DOCUMENTO||"").includes(search))
+      &&(!filterAnio||s.ANNO_INF===filterAnio)
+      &&(!filterGrado||s.GRADO===filterGrado)
+      &&(!filterRiesgo||(filterRiesgo==="alto"&&rc>=3)||(filterRiesgo==="medio"&&rc>=1&&rc<3)||(filterRiesgo==="bajo"&&rc===0))
+      &&(!filterFactor||s[filterFactor]==="S")
+      &&(!filterEstado||(s.ESTADO||"MATRICULADO")===filterEstado);
+  });
+  const anios=Array.from(new Set(students.map(s=>s.ANNO_INF).filter(Boolean))).sort((a,b)=>Number(b)-Number(a));
+  const grados=Array.from(new Set(students.map(s=>s.GRADO).filter(Boolean))).sort((a,b)=>GRADO_OPTS.findIndex(g=>g.value===a)-GRADO_OPTS.findIndex(g=>g.value===b));
+  const totalPages=Math.max(1,Math.ceil(filtered.length/PAGE));
+  const curPage=Math.min(page,totalPages);
+  const pageItems=filtered.slice((curPage-1)*PAGE,curPage*PAGE);
+  const hf=search||filterAnio||filterGrado||filterRiesgo||filterFactor||filterEstado;
+  const nb=a=>`px-3 py-1.5 rounded-lg text-sm font-medium transition ${a?"bg-white text-indigo-700":"text-white/90 hover:bg-white/10"}`;
+  const btnCls="flex items-center gap-1.5 px-3 py-2 border border-slate-200 rounded-lg text-sm hover:bg-slate-100";
+  const sel="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white";
+
+  return h('div',{className:"min-h-screen bg-slate-50 text-slate-800"},
+    h('style',null,`@keyframes spin{to{transform:rotate(360deg)}}`),
+
+    // HEADER
+    h('header',{className:"bg-gradient-to-r from-indigo-600 to-blue-600 text-white px-4 sm:px-6 py-4 shadow-md"},
+      h('div',{className:"max-w-6xl mx-auto flex items-center justify-between flex-wrap gap-3"},
+        h('div',{className:"flex items-center gap-2"},h(Icons.Grad)," ",h('h1',{className:"text-lg sm:text-xl font-semibold"},`Caracterización Estudiantil - ${II.nombre}`)),
+        h('nav',{className:"flex gap-2 items-center flex-wrap"},
+          h('button',{onClick:()=>setView("list"),className:nb(view==="list"||view==="form")},"Estudiantes"),
+          h('button',{onClick:()=>setView("reports"),className:nb(view==="reports")},"Reportes"),
+          canManageUsers&&h('button',{onClick:()=>setShowSettings(true),className:"p-1.5 rounded-lg text-white/90 hover:bg-white/10",title:"Gestión de usuarios"},h(Icons.Settings)),
+          isAdmin&&h('button',{onClick:()=>setShowInstConfig(true),className:"p-1.5 rounded-lg text-white/90 hover:bg-white/10",title:"Datos de la institución"},h(Icons.Grad)),
+          isAdmin&&h('button',{onClick:()=>setConfirmClearDB(true),className:"p-1.5 rounded-lg text-white/90 hover:bg-rose-500/70",title:"Limpiar base de datos"},h(Icons.Trash)),
+          h('div',{className:"flex items-center gap-1.5 px-2 py-1 bg-white/10 rounded-lg text-xs"},h(Icons.User),h('span',null,session.username),h('span',{className:`px-1.5 py-0.5 rounded-full text-xs font-semibold ${ROLE_BADGE[role]||""}`},ROLE_LABELS[role]||role)),
+          h('div',{className:`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium ${db?"bg-emerald-500/20 text-emerald-100":"bg-amber-500/20 text-amber-100"}`},
+            h('span',{className:`w-2 h-2 rounded-full ${db?"bg-emerald-400":"bg-amber-400"}`}),
+            db?"Firebase":"Local"
+          ),
+          h('button',{onClick:()=>setSession(null),className:"px-3 py-1.5 rounded-lg text-sm font-medium bg-white/10 hover:bg-white/20 border border-white/30"},"Salir")
+        )
+      )
+    ),
+
+    showSettings&&h(UserSettings,{onClose:()=>setShowSettings(false),students,onGenMissingPins:hGenMissingPins}),
+    showInstConfig&&h(InstConfigPanel,{onClose:()=>setShowInstConfig(false),onSaved:()=>setInstVersion(v=>v+1)}),
+
+    // MODAL LIMPIAR DB
+    confirmClearDB&&h('div',{className:"fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4"},
+      h('div',{className:"bg-white rounded-xl shadow-xl p-6 max-w-sm w-full"},
+        h('h3',{className:"text-base font-semibold text-slate-800 mb-1 flex items-center gap-2"},h(Icons.Trash),"¿Limpiar base de datos?"),
+        h('p',{className:"text-sm text-slate-500 mb-2"},"Se eliminarán ",h('strong',null,"todos los estudiantes")," registrados."),
+        h('p',{className:"text-xs bg-rose-50 text-rose-700 rounded-lg px-3 py-2 mb-4"},"⚠️ Acción irreversible. Exporta el Excel antes."),
+        h('div',{className:"flex justify-end gap-3"},
+          h('button',{onClick:()=>setConfirmClearDB(false),className:"px-4 py-2 border border-slate-200 rounded-lg text-sm hover:bg-slate-50"},"Cancelar"),
+          h('button',{onClick:hClear,className:"px-4 py-2 bg-rose-600 text-white rounded-lg text-sm hover:bg-rose-700"},"Eliminar todo")
+        )
+      )
+    ),
+
+    h('main',{className:"max-w-6xl mx-auto px-4 sm:px-6 py-6"},
+      statusMsg&&h('div',{className:`mb-4 px-4 py-2 rounded-lg text-sm ${statusError?"bg-rose-100 text-rose-700":"bg-emerald-100 text-emerald-800"}`},statusMsg),
+
+      loading
+        ?h('div',{className:"flex items-center justify-center py-20 text-slate-400 gap-2"},h(Icons.Spin),"Cargando datos...")
+        :h('div',null,
+
+          // LISTA
+          view==="list"&&h('div',{className:"space-y-4"},
+            // FILTROS
+            h('div',{className:"flex flex-wrap gap-2"},
+              h('div',{className:"relative"},h('span',{className:"absolute left-2.5 top-2.5 text-slate-400"},h(Icons.Search)),h('input',{value:search,onChange:e=>{setSearch(e.target.value);setPage(1);},placeholder:"Nombre o documento...",className:"pl-8 pr-3 py-2 border border-slate-200 rounded-lg text-sm w-56 focus:outline-none focus:ring-2 focus:ring-indigo-400"})),
+              h('select',{value:filterAnio,onChange:e=>{setFilterAnio(e.target.value);setPage(1);},className:sel},h('option',{value:""},"Todos los años"),anios.map(a=>h('option',{key:a,value:a},a))),
+              h('select',{value:filterGrado,onChange:e=>{setFilterGrado(e.target.value);setPage(1);},className:sel},h('option',{value:""},"Todos los grados"),grados.map(g=>{const l=GRADO_OPTS.find(o=>o.value===g)?.label||g;return h('option',{key:g,value:g},l);})),
+              h('select',{value:filterEstado,onChange:e=>{setFilterEstado(e.target.value);setPage(1);},className:sel},h('option',{value:""},"Todos los estados"),h('option',{value:"MATRICULADO"},"Matriculado"),h('option',{value:"RETIRADO"},"Retirado")),
+              h('select',{value:filterRiesgo,onChange:e=>{setFilterRiesgo(e.target.value);setPage(1);},className:sel},h('option',{value:""},"Todos los riesgos"),h('option',{value:"alto"},"🔴 Riesgo alto"),h('option',{value:"medio"},"🟡 Riesgo medio"),h('option',{value:"bajo"},"⚪ Riesgo bajo")),
+              h('select',{value:filterFactor,onChange:e=>{setFilterFactor(e.target.value);setPage(1);},className:sel},h('option',{value:""},"Todos los factores"),h('option',{value:"EMBARAZO"},"Embarazo"),h('option',{value:"TRABAJA"},"Trabaja"),h('option',{value:"MAT_PAT_TEMPRANA_EDAD"},"Maternidad/Paternidad"),h('option',{value:"VICTIMA_DISCRIMINACION"},"Discriminación"),h('option',{value:"VICTIMA_AGRESIONES"},"Agresiones"),h('option',{value:"RET_EST_SIN_TERMINAR_ANO_ESC"},"Retiró sin terminar año"),h('option',{value:"REPETIDA_ANO"},"Repitió año"),h('option',{value:"REPETIDA_GRADO_ACTUAL"},"Repite grado actual"),h('option',{value:"DIFICULTADES_APRENDIZAJE"},"Dificultades aprendizaje")),
+              hf&&h('button',{onClick:()=>{setSearch("");setFilterAnio("");setFilterGrado("");setFilterEstado("");setFilterRiesgo("");setFilterFactor("");setPage(1);},className:"px-3 py-2 text-xs text-rose-600 border border-rose-200 rounded-lg hover:bg-rose-50"},"Limpiar filtros")
+            ),
+            // BOTONES ACCIÓN
+            h('div',{className:"flex gap-2 flex-wrap"},
+              canIE&&h('button',{onClick:()=>fileRef.current?.click(),disabled:importing,className:btnCls},importing?h(Icons.Spin):h(Icons.Upload),"Importar Excel"),
+              canIE&&h('input',{ref:fileRef,type:"file",accept:".xlsx,.xls",className:"hidden",onChange:hImport}),
+              canIE&&h('button',{onClick:hExport,className:btnCls},h(Icons.Download),"Exportar Excel"),
+              canIE&&h('div',{className:"relative"},
+                h('button',{onClick:()=>setShowSimpadeMenu(!showSimpadeMenu),className:"flex items-center gap-1.5 px-3 py-2 border border-indigo-200 bg-indigo-50 text-indigo-700 rounded-lg text-sm hover:bg-indigo-100"},h(Icons.File),"Exportar SIMPADE"),
+                showSimpadeMenu&&h('div',{className:"absolute left-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-30 w-72 py-1"},
+                  ["Formato 1 · Información no migrada","Formato 2 · Asignaturas no aprobadas","Formato 3 · Información completa","Formato 4 · Razones de deserción","Formato 5 · Información familiares"].map((label,i)=>
+                    h('button',{key:i,onClick:()=>{[xS1,xS2,xS3,xS4,xS5][i]();setShowSimpadeMenu(false);},className:"w-full text-left px-3 py-2 text-sm hover:bg-slate-50"},label)
+                  )
+                )
+              ),
+              h('button',{onClick:xRiesgo,className:"flex items-center gap-1.5 px-3 py-2 border border-rose-200 bg-rose-50 text-rose-700 rounded-lg text-sm hover:bg-rose-100"},h(Icons.Download),"Reporte de Riesgo"),
+              canEditStudents&&h('button',{onClick:startNew,className:"flex items-center gap-1.5 px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700"},h(Icons.Plus),"Nuevo estudiante")
+            ),
+            // TABLA
+            h('div',{className:"bg-white rounded-xl border border-slate-200 overflow-x-auto"},
+              h('table',{className:"w-full text-sm"},
+                h('thead',{className:"bg-slate-50 text-slate-500 text-xs uppercase"},
+                  h('tr',null,["Documento","Nombre completo","Grado","Año","Estado","Riesgo","Acciones"].map(t=>h('th',{key:t,className:`text-left px-4 py-3 ${t==="Acciones"?"text-right":""}`},t)))
+                ),
+                h('tbody',null,
+                  pageItems.map(s=>h('tr',{key:s._id,className:"border-t border-slate-100 hover:bg-slate-50"},
+                    h('td',{className:"px-4 py-3 whitespace-nowrap"},s.NRO_DOCUMENTO||"—"),
+                    h('td',{className:"px-4 py-3"},[s.NOMBRE1,s.NOMBRE2,s.APELLIDO1,s.APELLIDO2].filter(Boolean).join(" ")||"—"),
+                    h('td',{className:"px-4 py-3"},GRADO_OPTS.find(g=>g.value===s.GRADO)?.label?.split(" - ")[1]||s.GRADO||"—"),
+                    h('td',{className:"px-4 py-3"},s.ANNO_INF||"—"),
+                    h('td',{className:"px-4 py-3"},estadoBadge(s.ESTADO)),
+                    h('td',{className:"px-4 py-3"},riskBadge(riskCount(s))),
+                    h('td',{className:"px-4 py-3 text-right whitespace-nowrap"},
+                      s.ESTADO==="RETIRADO"&&h('button',{onClick:()=>printRetiro(s),className:"text-rose-500 hover:text-rose-700 mr-2"},h(Icons.File)),
+                      h('button',{onClick:()=>setViewingStudent(s),className:"text-slate-400 hover:text-indigo-600 mr-2"},h(Icons.Eye)),
+                      canEditStudents&&h('button',{onClick:()=>startEdit(s),className:"text-indigo-600 hover:text-indigo-800 mr-2"},h(Icons.Edit)),
+                      canDelete&&h('button',{onClick:()=>setConfirmDeleteId(s._id),className:"text-rose-500 hover:text-rose-700"},h(Icons.Trash))
+                    )
+                  )),
+                  filtered.length===0&&h('tr',null,h('td',{colSpan:7,className:"px-4 py-10 text-center text-slate-400"},"No hay estudiantes registrados."))
+                )
+              )
+            ),
+            // PAGINACIÓN
+            filtered.length>0&&h('div',{className:"flex items-center justify-between text-sm text-slate-500"},
+              h('span',null,`Página ${curPage} de ${totalPages} · ${filtered.length} registro(s)`),
+              h('div',{className:"flex gap-2"},
+                h('button',{disabled:curPage<=1,onClick:()=>setPage(p=>p-1),className:"p-1.5 border rounded disabled:opacity-40"},h(Icons.ChevL)),
+                h('button',{disabled:curPage>=totalPages,onClick:()=>setPage(p=>p+1),className:"p-1.5 border rounded disabled:opacity-40"},h(Icons.ChevR))
+              )
+            ),
+            h('p',{className:"text-xs text-slate-400 text-center"},db?"✅ Datos sincronizados con Firebase (compartidos)":"⚠️ Datos guardados solo en este navegador (sin Firebase)"),
+
+            // MODAL ELIMINAR
+            confirmDeleteId&&h('div',{className:"fixed inset-0 bg-black/40 flex items-center justify-center z-50"},
+              h('div',{className:"bg-white rounded-xl shadow-xl p-6 max-w-sm w-full mx-4"},
+                h('h3',{className:"text-base font-semibold text-slate-800 mb-2"},"¿Eliminar estudiante?"),
+                h('p',{className:"text-sm text-slate-500 mb-5"},"Esta acción no se puede deshacer."),
+                h('div',{className:"flex justify-end gap-3"},
+                  h('button',{onClick:()=>setConfirmDeleteId(null),className:"px-4 py-2 border border-slate-200 rounded-lg text-sm hover:bg-slate-50"},"Cancelar"),
+                  h('button',{onClick:()=>hDelete(confirmDeleteId),className:"px-4 py-2 bg-rose-600 text-white rounded-lg text-sm hover:bg-rose-700"},"Eliminar")
+                )
+              )
+            ),
+
+            // MODAL FICHA
+            viewingStudent&&h('div',{className:"fixed inset-0 bg-black/40 z-40 overflow-y-auto"},
+              h('div',{className:"max-w-3xl mx-auto my-8 px-4"},h(StudentCard,{student:viewingStudent,onClose:()=>setViewingStudent(null)}))
+            ),
+
+            // MODAL IMPORTACIÓN
+            importResult&&h('div',{className:"fixed inset-0 bg-black/40 z-50 flex items-center justify-center px-4"},
+              h('div',{className:"bg-white rounded-2xl shadow-xl w-full max-w-2xl p-6 max-h-[90vh] flex flex-col"},
+                h('div',{className:"flex items-center justify-between mb-4"},
+                  h('h3',{className:"text-base font-semibold text-slate-800"},"Resultado de importación"),
+                  h('button',{onClick:()=>setImportResult(null),className:"text-slate-400 hover:text-slate-600"},h(Icons.X))
+                ),
+                h('div',{className:"flex gap-3 mb-4"},
+                  h('div',{className:"flex-1 bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3 text-center"},h('p',{className:"text-2xl font-bold text-emerald-700"},importResult.imported),h('p',{className:"text-xs text-emerald-600 mt-1"},"Importado(s) correctamente")),
+                  h('div',{className:"flex-1 bg-rose-50 border border-rose-200 rounded-lg px-4 py-3 text-center"},h('p',{className:"text-2xl font-bold text-rose-700"},importResult.rejected.length),h('p',{className:"text-xs text-rose-600 mt-1"},"No importado(s)"))
+                ),
+                importResult.rejected.length>0&&h('div',{className:"overflow-y-auto flex-1 border border-slate-200 rounded-lg"},
+                  h('table',{className:"w-full text-sm"},
+                    h('thead',{className:"bg-slate-50 text-slate-500 text-xs uppercase sticky top-0"},
+                      h('tr',null,h('th',{className:"text-left px-3 py-2"},"#"),h('th',{className:"text-left px-3 py-2"},"Nombre"),h('th',{className:"text-left px-3 py-2"},"Documento"),h('th',{className:"text-left px-3 py-2"},"Razón"))
+                    ),
+                    h('tbody',null,importResult.rejected.map((r,i)=>h('tr',{key:i,className:"border-t border-slate-100"},
+                      h('td',{className:"px-3 py-2 text-slate-400"},i+1),
+                      h('td',{className:"px-3 py-2"},r.nombre),
+                      h('td',{className:"px-3 py-2 whitespace-nowrap"},r.doc),
+                      h('td',{className:"px-3 py-2"},h('span',{className:`px-2 py-0.5 rounded-full text-xs font-medium ${r.razon.includes("base de datos")?"bg-amber-100 text-amber-700":r.razon.includes("Excel")?"bg-rose-100 text-rose-700":"bg-slate-100 text-slate-600"}`},r.razon))
+                    )))
+                  )
+                ),
+                h('div',{className:"flex justify-between items-center mt-4"},
+                  importResult.rejected.length>0&&h('button',{onClick:()=>{const rows=importResult.rejected.map(r=>({"Nombre":r.nombre,"Documento":r.doc,"Razón":r.razon}));const ws=XLSX.utils.json_to_sheet(rows,{header:["Nombre","Documento","Razón"]});const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Rechazados");XLSX.writeFile(wb,`Rechazados_${new Date().toISOString().slice(0,10)}.xlsx`);},className:"flex items-center gap-1.5 px-4 py-2 border border-slate-200 rounded-lg text-sm hover:bg-slate-50"},h(Icons.Download),"Descargar rechazados (.xlsx)"),
+                  h('button',{onClick:()=>setImportResult(null),className:"ml-auto px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700"},"Cerrar")
+                )
+              )
+            )
+          ),
+
+          // FORMULARIO
+          view==="form"&&h('div',{className:"space-y-4"},
+            h('div',{className:"flex items-center justify-between"},
+              h('h2',{className:"text-lg font-semibold"},editingId?"Editar estudiante":"Nuevo estudiante"),
+              h('button',{onClick:()=>setView("list"),className:"text-slate-400 hover:text-slate-600"},h(Icons.X))
+            ),
+            h('div',{className:"flex gap-1 overflow-x-auto pb-1"},SECTIONS.map((sec,i)=>h('button',{key:sec.id,onClick:()=>setActiveSection(i),className:`px-3 py-1.5 rounded-full text-sm whitespace-nowrap ${activeSection===i?"bg-indigo-600 text-white":"bg-slate-100 text-slate-600 hover:bg-slate-200"}`},sec.label))),
+            h('div',{className:"bg-white rounded-xl border border-slate-200 p-5"},
+              SECTIONS[activeSection].id==="desercion"&&formData.ESTADO!=="RETIRADO"
+                ?h('div',{className:"text-center py-10"},h('p',{className:"text-sm text-slate-400"},"Esta sección solo aplica si el estado del estudiante es ",h('strong',null,"Retirado"),".")," ",!canManageEstado&&h('p',{className:"text-xs text-amber-600 mt-2 flex items-center justify-center gap-1"},h(Icons.Lock),"Solo Admin, Rector, Coordinación u Orientación pueden cambiar el estado."))
+                :h('div',{className:"grid grid-cols-1 md:grid-cols-2 gap-4"},FIELD_DEFS.filter(f=>f.section===SECTIONS[activeSection].id&&!f.hidden).map(f=>
+                    f.id==="PIN"&&canManageEstado
+                      ?h('div',{key:f.id,className:"md:col-span-2"},
+                          h('label',{className:"block text-xs font-medium text-slate-500 mb-1"},f.label),
+                          h('div',{className:"flex gap-2"},
+                            h('input',{value:formData.PIN||"",onChange:e=>hChange("PIN",e.target.value),className:"flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"}),
+                            h('button',{type:"button",onClick:()=>{const g=genPin(formData);if(g)hChange("PIN",g);else showSt("Completa primer nombre, primer apellido y documento antes de generar el PIN.",true);},className:"px-3 py-2 border border-indigo-200 text-indigo-600 rounded-lg text-sm hover:bg-indigo-50 whitespace-nowrap"},"Generar")
+                          ),
+                          h('p',{className:"text-[11px] text-slate-400 mt-1"},"Se genera solo al crear el estudiante si lo dejas vacío. Usa \"Generar\" para volver a crearlo si el estudiante lo olvidó.")
+                        )
+                      :h(FieldRenderer,{key:f.id,field:f,value:formData[f.id],onChange:v=>hChange(f.id,v),parentValue:f.dependsOn?formData[f.dependsOn]:undefined,disabled:f.adminOnly&&!canManageEstado})
+                  ))
+            ),
+            h('div',{className:"flex justify-between flex-wrap gap-3"},
+              h('div',{className:"flex gap-2"},
+                h('button',{disabled:activeSection===0,onClick:()=>setActiveSection(s=>s-1),className:"flex items-center gap-1 px-3 py-2 border rounded-lg text-sm disabled:opacity-40"},h(Icons.ChevL),"Anterior"),
+                h('button',{disabled:activeSection===SECTIONS.length-1,onClick:()=>setActiveSection(s=>s+1),className:"flex items-center gap-1 px-3 py-2 border rounded-lg text-sm disabled:opacity-40"},"Siguiente",h(Icons.ChevR))
+              ),
+              h('button',{onClick:hSave,className:"flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700"},h(Icons.Save),"Guardar estudiante")
+            )
+          ),
+
+          // REPORTES
+          view==="reports"&&h(ReportsView,{students})
+        )
+    )
+  );
+}
+
+window.addEventListener('DOMContentLoaded', function() {
+  ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+});
+</script>
+</body>
+</html>
