@@ -819,7 +819,12 @@ function App(){
         setStudents(list);await persist(list);
       }
       showSt(editingId?"Estudiante actualizado correctamente.":"Estudiante guardado correctamente.");
-      setView("list");
+      if(data.ESTADO==="RETIRADO"&&(!data.RAZON_DESERCION||!data.CAUSAS)){
+        setEditingId(id);
+        setActiveSection(SECTIONS.findIndex(s=>s.id==="desercion"));
+      }else{
+        setView("list");
+      }
     }catch(e){console.error(e);showSt("No se pudo guardar. Verifica tu conexión e inténtalo de nuevo.",true);}
   }
   async function hDelete(id){
