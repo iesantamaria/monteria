@@ -174,6 +174,8 @@ const FIELD_DEFS=[
   {id:"GRADO",label:"Grado",type:"select",section:"ident",options:GRADO_OPTS,studentLocked:true},
   {id:"GRUPO",label:"Grupo",type:"number",section:"ident",studentLocked:true},
   {id:"JORNADA",label:"Jornada",type:"select",section:"ident",options:JORNADA_OPTS,studentLocked:true},
+  {id:"CODIGO_DANE_SEDE",label:"Código DANE Sede",type:"number",section:"ident",studentLocked:true},
+  {id:"NOMBRE_SEDE",label:"Nombre de sede",type:"text",section:"ident",studentLocked:true,validate:"alpha"},
   {id:"ESTADO",label:"Estado del estudiante",type:"select",section:"ident",options:ESTADO_OPTS,adminOnly:true},
   {id:"PIN",label:"PIN de acceso del estudiante (4-6 dígitos, para que actualice su información)",type:"text",section:"ident",adminOnly:true},
   {id:"VIVE_SOLO",label:"¿Vive solo?",type:"yesno",section:"personal"},
@@ -911,7 +913,7 @@ function App(){
     const rc=riskCount(s);
     return(!search||name.includes(search.toLowerCase())||(s.NRO_DOCUMENTO||"").includes(search))
       &&(!filterAnio||s.ANNO_INF===filterAnio)
-      &&(!filterGrado||s.GRADO===filterGrado)
+      &&(!filterGrado||(filterGrado==="_INVALID_"?(s.GRADO&&!GRADO_OPTS.some(o=>o.value===s.GRADO)):s.GRADO===filterGrado))
       &&(!filterGrupo||s.GRUPO===filterGrupo)
       &&(!filterJornada||s.JORNADA===filterJornada)
       &&(!filterRiesgo||(filterRiesgo==="alto"&&rc>=3)||(filterRiesgo==="medio"&&rc>=1&&rc<3)||(filterRiesgo==="bajo"&&rc===0))
@@ -919,7 +921,8 @@ function App(){
       &&(!filterEstado||(s.ESTADO||"MATRICULADO")===filterEstado);
   });
   const anios=Array.from(new Set(students.map(s=>s.ANNO_INF).filter(Boolean))).sort((a,b)=>Number(b)-Number(a));
-  const grados=Array.from(new Set(students.map(s=>s.GRADO).filter(Boolean))).sort((a,b)=>GRADO_OPTS.findIndex(g=>g.value===a)-GRADO_OPTS.findIndex(g=>g.value===b));
+  const grados=Array.from(new Set(students.map(s=>s.GRADO).filter(Boolean))).filter(g=>GRADO_OPTS.some(o=>o.value===g)).sort((a,b)=>GRADO_OPTS.findIndex(g=>g.value===a)-GRADO_OPTS.findIndex(g=>g.value===b));
+  const hayGradosInvalidos=students.some(s=>s.GRADO&&!GRADO_OPTS.some(o=>o.value===s.GRADO));
   const grupos=Array.from(new Set(students.map(s=>s.GRUPO).filter(Boolean))).sort();
   const totalPages=Math.max(1,Math.ceil(filtered.length/PAGE));
   const curPage=Math.min(page,totalPages);
@@ -981,7 +984,7 @@ function App(){
             h('div',{className:"flex flex-wrap gap-2"},
               h('div',{className:"relative"},h('span',{className:"absolute left-2.5 top-2.5 text-slate-400"},h(Icons.Search)),h('input',{value:search,onChange:e=>{setSearch(e.target.value);setPage(1);},placeholder:"Nombre o documento...",className:"pl-8 pr-3 py-2 border border-slate-200 rounded-lg text-sm w-56 focus:outline-none focus:ring-2 focus:ring-indigo-400"})),
               h('select',{value:filterAnio,onChange:e=>{setFilterAnio(e.target.value);setPage(1);},className:sel},h('option',{value:""},"Todos los años"),anios.map(a=>h('option',{key:a,value:a},a))),
-              h('select',{value:filterGrado,onChange:e=>{setFilterGrado(e.target.value);setPage(1);},className:sel},h('option',{value:""},"Todos los grados"),grados.map(g=>{const l=GRADO_OPTS.find(o=>o.value===g)?.label||g;return h('option',{key:g,value:g},l);})),
+              h('select',{value:filterGrado,onChange:e=>{setFilterGrado(e.target.value);setPage(1);},className:sel},h('option',{value:""},"Todos los grados"),grados.map(g=>{const l=GRADO_OPTS.find(o=>o.value===g)?.label||g;return h('option',{key:g,value:g},l);}),hayGradosInvalidos&&h('option',{value:"_INVALID_"},"⚠ Valores de grado inválidos")),
               h('select',{value:filterGrupo,onChange:e=>{setFilterGrupo(e.target.value);setPage(1);},className:sel},h('option',{value:""},"Todos los grupos"),grupos.map(g=>h('option',{key:g,value:g},g))),
               h('select',{value:filterJornada,onChange:e=>{setFilterJornada(e.target.value);setPage(1);},className:sel},h('option',{value:""},"Todas las jornadas"),JORNADA_OPTS.map(j=>h('option',{key:j.value,value:j.value},j.label))),
               h('select',{value:filterEstado,onChange:e=>{setFilterEstado(e.target.value);setPage(1);},className:sel},h('option',{value:""},"Todos los estados"),h('option',{value:"MATRICULADO"},"Matriculado"),h('option',{value:"RETIRADO"},"Retirado")),
@@ -1096,6 +1099,7 @@ function App(){
               h('button',{onClick:()=>setView("list"),className:"text-slate-400 hover:text-slate-600"},h(Icons.X))
             ),
             h('div',{className:"flex gap-1 overflow-x-auto pb-1"},SECTIONS.map((sec,i)=>h('button',{key:sec.id,onClick:()=>setActiveSection(i),className:`px-3 py-1.5 rounded-full text-sm whitespace-nowrap ${activeSection===i?"bg-indigo-600 text-white":"bg-slate-100 text-slate-600 hover:bg-slate-200"}`},sec.label))),
+            formData.ESTADO==="RETIRADO"&&(!formData.RAZON_DESERCION||!formData.CAUSAS)&&h('button',{onClick:()=>setActiveSection(SECTIONS.findIndex(s=>s.id==="desercion")),className:"w-full text-left bg-rose-50 border border-rose-300 text-rose-700 text-sm px-4 py-3 rounded-lg flex items-center gap-2 hover:bg-rose-100"},h(Icons.File),h('span',null,h('strong',null,"Falta información de retiro. "),"Debes completar la razón de deserción y la causa en la pestaña ",h('strong',null,"Retiro / Deserción"),". Clic aquí para ir.")),
             h('div',{className:"bg-white rounded-xl border border-slate-200 p-5"},
               SECTIONS[activeSection].id==="desercion"&&formData.ESTADO!=="RETIRADO"
                 ?h('div',{className:"text-center py-10"},h('p',{className:"text-sm text-slate-400"},"Esta sección solo aplica si el estado del estudiante es ",h('strong',null,"Retirado"),".")," ",!canManageEstado&&h('p',{className:"text-xs text-amber-600 mt-2 flex items-center justify-center gap-1"},h(Icons.Lock),"Solo Admin, Rector, Coordinación u Orientación pueden cambiar el estado."))
