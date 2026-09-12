@@ -240,17 +240,24 @@ function genPin(s){
 function emptyStudent(){const o={};FIELD_DEFS.forEach(f=>{o[f.id]="";});o._id=null;o.ESTADO="MATRICULADO";return o;}
 function riskCount(s){if(s.ESTADO==="RETIRADO")return -1;return RISK_FIELDS.filter(f=>s[f]==="S").length;}
 function normalizeKey(k){return String(k||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().replace(/\(.*?\)/g,"").replace(/ALT\s*\+?\s*124/g,"").replace(/[¿?]/g,"").replace(/[^A-Z0-9]+/g,"_").replace(/_+/g,"_").replace(/^_|_$/g,"");}
+function matchOption(raw,options){
+  if(!raw)return raw;
+  const norm=s=>String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().replace(/[^A-Z0-9]+/g,"_").replace(/^_|_$/g,"");
+  const target=norm(raw);
+  const hit=options.find(o=>norm(o.value)===target||norm(o.label)===target);
+  return hit?hit.value:raw;
+}
 const FIELD_KEY_MAP={};FIELD_DEFS.forEach(f=>{FIELD_KEY_MAP[normalizeKey(f.id)]=f.id;});
 function countBy(arr,fid){const c={};arr.forEach(s=>{const v=s[fid];if(v)c[v]=(c[v]||0)+1;});return Object.entries(c).map(([name,total])=>({name,total}));}
 function countMulti(arr,fids){const c={};arr.forEach(s=>{fids.forEach(f=>{(s[f]||"").split("|").filter(Boolean).forEach(v=>{c[v]=(c[v]||0)+1;});});});return Object.entries(c).map(([name,total])=>({name,total})).sort((a,b)=>b.total-a.total);}
-function matchVal(opts,raw){if(!raw)return "";const tries=[raw,String(raw).padStart(2,"0"),String(raw).replace(/^0+/,"")];for(const t of tries){const f=opts.find(o=>(typeof o==="object"?o.value:o)===t);if(f)return typeof f==="object"?f.value:f;}return raw;}
+function matchVal(opts,raw){if(!raw)return "";const tries=[raw,String(raw).padStart(2,"0"),String(raw).replace(/^0+/,"")];for(const t of tries){const f=opts.find(o=>(typeof o==="object"?o.value:o)===t);if(f)return typeof f==="object"?f.value:f;}const m=matchOption(raw,opts.map(o=>typeof o==="object"?o:{value:o,label:o}));if(m!==raw)return m;return raw;}
 function resolveLabel(field,value){
   if(!value)return "—";
   if(field.type==="yesno")return value==="S"?"Sí":value==="N"?"No":value;
   if(field.type==="date"){try{return new Date(value+"T00:00:00").toLocaleDateString("es-CO");}catch{return value;}}
   const strip=l=>l&&l.includes(" - ")?l.split(" - ").slice(1).join(" - "):(l||value);
   if(field.type==="multicheck"){return (value||"").split("|").filter(Boolean).map(v=>{const tries=[v,String(v).padStart(2,"0"),String(v).replace(/^0+/,"")];let o;for(const t of tries){o=(field.options||[]).find(x=>(typeof x==="object"?x.value:x)===t);if(o)break;}if(!o)o=(field.options||[]).find(x=>(typeof x==="object"?x.label:x)===v);return strip(o?(typeof o==="object"?o.label:o):v);}).join(", ")||"—";}
-  if(field.type==="select"){const opts=field.options||[];const tries=[value,String(value).padStart(2,"0"),String(value).replace(/^0+/,"")];let o;for(const t of tries){o=opts.find(x=>(typeof x==="object"?x.value:x)===t);if(o)break;}if(!o)o=opts.find(x=>(typeof x==="object"?x.label:x)===value);return strip(o?(typeof o==="object"?o.label:o):value);}
+  if(field.type==="select"){const opts=field.options||[];const tries=[value,String(value).padStart(2,"0"),String(value).replace(/^0+/,"")];let o;for(const t of tries){o=opts.find(x=>(typeof x==="object"?x.value:x)===t);if(o)break;}if(!o)o=opts.find(x=>(typeof x==="object"?x.label:x)===value);if(!o){const mv=matchOption(value,opts.map(x=>typeof x==="object"?x:{value:x,label:x}));o=opts.find(x=>(typeof x==="object"?x.value:x)===mv);}return strip(o?(typeof o==="object"?o.label:o):value);}
   return value;
 }
 
@@ -716,6 +723,14 @@ function StudentSelfView({studentId,onLogout}){
         "Actualiza tu información cada año. Tu nombre, documento y tipo de documento no se pueden modificar aquí; si hay un error en esos datos, contacta a la institución."
       ),
       h('div',{className:"flex gap-1 flex-wrap"},STUDENT_SECTIONS.map((sec,i)=>h('button',{key:sec.id,onClick:()=>setActiveSection(i),className:`px-3 py-1.5 rounded-full text-sm whitespace-nowrap ${activeSection===i?"bg-indigo-600 text-white":"bg-slate-100 text-slate-600 hover:bg-slate-200"}`},sec.label))),
+      h('div',{className:"bg-sky-50 border border-sky-200 text-sky-700 text-xs rounded-lg px-4 py-2.5 flex items-start gap-2"},
+        h(Icons.Info),
+        h('span',null,
+          STUDENT_SECTIONS[activeSection].id==="familiar"
+            ?h('span',null,h('strong',null,"Esta sección la debe llenar el acudiente responsable. "),"La información de este apartado corresponde a la persona a cargo del estudiante, no al estudiante mismo.")
+            :h('span',null,h('strong',null,"Esta sección corresponde únicamente al estudiante"),nombre?` (${nombre})`:"",". No registres aquí datos del acudiente o de otra persona.")
+        )
+      ),
       h('div',{className:"bg-white rounded-xl border border-slate-200 p-5"},
         h('div',{className:"grid grid-cols-1 md:grid-cols-2 gap-4"},
           FIELD_DEFS.filter(f=>f.section===STUDENT_SECTIONS[activeSection].id&&!f.hidden&&!f.adminOnly).map(f=>
@@ -864,7 +879,9 @@ function App(){
       const existing=new Set(students.filter(s=>(s.NRO_DOCUMENTO||"").trim()).map(s=>keyOf(s.TIPO_DOCUMENTO,s.NRO_DOCUMENTO,s.ANNO_INF)));
       const seen=new Set();const imported=[],rejected=[];
       rows.forEach((row,idx)=>{
-        const obj=emptyStudent();Object.keys(row).forEach(k=>{const fid=FIELD_KEY_MAP[normalizeKey(k)];if(fid)obj[fid]=String(row[k]??"").trim();});if(!obj.ESTADO)obj.ESTADO="MATRICULADO";
+        const obj=emptyStudent();Object.keys(row).forEach(k=>{const fid=FIELD_KEY_MAP[normalizeKey(k)];if(fid)obj[fid]=String(row[k]??"").trim();});
+        FIELD_DEFS.forEach(f=>{if(f.type==="select"&&f.options&&obj[f.id])obj[f.id]=matchOption(obj[f.id],f.options);});
+        if(!obj.ESTADO)obj.ESTADO="MATRICULADO";
         const doc=(obj.NRO_DOCUMENTO||"").trim();
         const nombre=[obj.NOMBRE1,obj.NOMBRE2,obj.APELLIDO1,obj.APELLIDO2].filter(Boolean).join(" ")||`Fila ${idx+2}`;
         if(!doc&&!obj.NOMBRE1&&!obj.APELLIDO1){rejected.push({nombre,doc:"—",razon:"Fila sin documento ni nombre"});return;}
