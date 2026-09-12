@@ -121,6 +121,7 @@ const DEFAULT_CREDS = {admin:{pass:"admin123",role:"admin"},rector:{pass:"rector
 async function loadCreds(){try{const r=await appStorage.get("app-credentials");if(r?.value)return JSON.parse(r.value);}catch{}return DEFAULT_CREDS;}
 async function saveCreds(c){try{await appStorage.set("app-credentials",JSON.stringify(c));}catch(e){console.error(e);}}
 
+const APP_VERSION="v1.6 - 2026-09-11";
 const II={nombre:"Nombre de la institución",lema:'"Lema institucional"',licencia:"Licencia de funcionamiento",jornada:"Jornada",dane:"",nit:"",email:"",web:"",dir:"",ciudad:"",shieldUrl:""};
 async function loadInstConfig(){
   if(db){try{const s=await db.collection('config').doc('institucion').get();if(s.exists)Object.assign(II,s.data());}catch(e){console.error(e);}}
@@ -383,7 +384,8 @@ function LoginScreen({onLogin}){
       h('div',{className:"flex flex-col items-center mb-6"},
         h('div',{className:"bg-indigo-100 rounded-full p-3 mb-3"},h(Icons.Grad)),
         h('h1',{className:"text-xl font-bold text-slate-800"},"Caracterización Estudiantil"),
-        h('p',{className:"text-sm text-slate-400 mt-1"},`${II.nombre} - Ingresa tus credenciales`)
+        h('p',{className:"text-sm text-slate-400 mt-1"},`${II.nombre} - Ingresa tus credenciales`),
+        h('p',{className:"text-[10px] text-slate-300 mt-3"},APP_VERSION)
       ),
       h('div',{className:"flex gap-1 bg-slate-100 rounded-lg p-1 mb-5"},
         h('button',{onClick:()=>{setMode("staff");setError("");},className:`flex-1 py-1.5 rounded-md text-xs font-medium ${mode==="staff"?"bg-white shadow text-indigo-700":"text-slate-500"}`},"Personal institucional"),
@@ -489,6 +491,7 @@ function UserSettings({onClose,students,onGenMissingPins}){
       "Nombre completo":[s.NOMBRE1,s.NOMBRE2,s.APELLIDO1,s.APELLIDO2].filter(Boolean).join(" "),
       "Documento":s.NRO_DOCUMENTO||"",
       "Grado":GRADO_OPTS.find(g=>g.value===s.GRADO)?.label?.split(" - ")[1]||s.GRADO||"",
+      "Sede":s.NOMBRE_SEDE||"",
       "Año":s.ANNO_INF||"",
       "PIN":s.PIN
     }));
@@ -500,9 +503,9 @@ function UserSettings({onClose,students,onGenMissingPins}){
   function exportPinsPDF(){
     const list=(students||[]).filter(s=>s.PIN);
     if(!list.length){alert("No hay estudiantes con PIN asignado todavía.");return;}
-    const rows=list.map(s=>`<tr><td>${[s.NOMBRE1,s.NOMBRE2,s.APELLIDO1,s.APELLIDO2].filter(Boolean).join(" ")}</td><td>${s.NRO_DOCUMENTO||""}</td><td>${GRADO_OPTS.find(g=>g.value===s.GRADO)?.label?.split(" - ")[1]||s.GRADO||""}</td><td>${s.PIN}</td></tr>`).join("");
+    const rows=list.map(s=>`<tr><td>${[s.NOMBRE1,s.NOMBRE2,s.APELLIDO1,s.APELLIDO2].filter(Boolean).join(" ")}</td><td>${s.NRO_DOCUMENTO||""}</td><td>${GRADO_OPTS.find(g=>g.value===s.GRADO)?.label?.split(" - ")[1]||s.GRADO||""}</td><td>${s.NOMBRE_SEDE||""}</td><td>${s.PIN}</td></tr>`).join("");
     const w=window.open("","_blank");
-    w.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>PINs de estudiantes</title><style>body{font-family:Arial,sans-serif;margin:24px;color:#1e293b;}table{width:100%;border-collapse:collapse;margin-top:16px;}th,td{border:1px solid #cbd5e1;padding:6px 8px;text-align:left;font-size:12px;}th{background:#f1f5f9;}@media print{button{display:none!important;}}</style></head><body><button onclick="window.print()" style="padding:7px 18px;background:#4f46e5;color:#fff;border:none;border-radius:7px;font-size:13px;cursor:pointer;">🖨️ Imprimir / Guardar PDF</button>${lhHtml()}<h2 style="font-size:16px;">PINs de acceso de estudiantes - ${II.nombre}</h2><table><thead><tr><th>Nombre completo</th><th>Documento</th><th>Grado</th><th>PIN</th></tr></thead><tbody>${rows}</tbody></table><p style="font-size:10px;color:#94a3b8;margin-top:16px;">Documento confidencial. Generado el ${new Date().toLocaleDateString("es-CO")}.</p>${lfHtml()}</body></html>`);
+    w.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>PINs de estudiantes</title><style>body{font-family:Arial,sans-serif;margin:24px;color:#1e293b;}table{width:100%;border-collapse:collapse;margin-top:16px;}th,td{border:1px solid #cbd5e1;padding:6px 8px;text-align:left;font-size:12px;}th{background:#f1f5f9;}@media print{button{display:none!important;}}</style></head><body><button onclick="window.print()" style="padding:7px 18px;background:#4f46e5;color:#fff;border:none;border-radius:7px;font-size:13px;cursor:pointer;">🖨️ Imprimir / Guardar PDF</button>${lhHtml()}<h2 style="font-size:16px;">PINs de acceso de estudiantes - ${II.nombre}</h2><table><thead><tr><th>Nombre completo</th><th>Documento</th><th>Grado</th><th>Sede</th><th>PIN</th></tr></thead><tbody>${rows}</tbody></table><p style="font-size:10px;color:#94a3b8;margin-top:16px;">Documento confidencial. Generado el ${new Date().toLocaleDateString("es-CO")}.</p>${lfHtml()}</body></html>`);
     w.document.close();
   }
 
@@ -938,7 +941,7 @@ function App(){
     // HEADER
     h('header',{className:"bg-gradient-to-r from-indigo-600 to-blue-600 text-white px-4 sm:px-6 py-4 shadow-md"},
       h('div',{className:"max-w-6xl mx-auto flex items-center justify-between flex-wrap gap-3"},
-        h('div',{className:"flex items-center gap-2"},h(Icons.Grad)," ",h('h1',{className:"text-lg sm:text-xl font-semibold"},`Caracterización Estudiantil - ${II.nombre}`)),
+        h('div',{className:"flex items-center gap-2"},h(Icons.Grad)," ",h('h1',{className:"text-lg sm:text-xl font-semibold"},`Caracterización Estudiantil - ${II.nombre}`),h('span',{className:"text-[10px] text-white/50 hidden sm:inline"},APP_VERSION)),
         h('nav',{className:"flex gap-2 items-center flex-wrap"},
           h('button',{onClick:()=>setView("list"),className:nb(view==="list"||view==="form")},"Estudiantes"),
           h('button',{onClick:()=>setView("reports"),className:nb(view==="reports")},"Reportes"),
