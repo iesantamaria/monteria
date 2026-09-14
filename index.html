@@ -121,7 +121,7 @@ const DEFAULT_CREDS = {admin:{pass:"admin123",role:"admin"},rector:{pass:"rector
 async function loadCreds(){try{const r=await appStorage.get("app-credentials");if(r?.value)return JSON.parse(r.value);}catch{}return DEFAULT_CREDS;}
 async function saveCreds(c){try{await appStorage.set("app-credentials",JSON.stringify(c));}catch(e){console.error(e);}}
 
-const APP_VERSION="v1.8 - 2026-09-14";
+const APP_VERSION="v1.9 - 2026-09-14";
 const II={nombre:"Nombre de la institución",lema:'"Lema institucional"',licencia:"Licencia de funcionamiento",jornada:"Jornada",dane:"",nit:"",email:"",web:"",dir:"",ciudad:"",shieldUrl:""};
 async function loadInstConfig(){
   if(db){try{const s=await db.collection('config').doc('institucion').get();if(s.exists)Object.assign(II,s.data());}catch(e){console.error(e);}}
@@ -965,7 +965,7 @@ function App(){
   const anios=Array.from(new Set(students.map(s=>s.ANNO_INF).filter(Boolean))).sort((a,b)=>Number(b)-Number(a));
   const grados=Array.from(new Set(students.map(s=>s.GRADO).filter(Boolean))).filter(g=>GRADO_OPTS.some(o=>o.value===g)).sort((a,b)=>GRADO_OPTS.findIndex(g=>g.value===a)-GRADO_OPTS.findIndex(g=>g.value===b));
   const hayGradosInvalidos=students.some(s=>s.GRADO&&!GRADO_OPTS.some(o=>o.value===s.GRADO));
-  const grupos=Array.from(new Set(students.map(s=>s.GRUPO).filter(Boolean))).sort();
+  const grupos=Array.from(new Set(students.filter(s=>!filterGrado||s.GRADO===filterGrado).map(s=>s.GRUPO).filter(Boolean))).sort();
   const totalPages=Math.max(1,Math.ceil(filtered.length/PAGE));
   const curPage=Math.min(page,totalPages);
   const pageItems=filtered.slice((curPage-1)*PAGE,curPage*PAGE);
@@ -1026,7 +1026,7 @@ function App(){
             h('div',{className:"flex flex-wrap gap-2"},
               h('div',{className:"relative"},h('span',{className:"absolute left-2.5 top-2.5 text-slate-400"},h(Icons.Search)),h('input',{value:search,onChange:e=>{setSearch(e.target.value);setPage(1);},placeholder:"Nombre o documento...",className:"pl-8 pr-3 py-2 border border-slate-200 rounded-lg text-sm w-56 focus:outline-none focus:ring-2 focus:ring-indigo-400"})),
               h('select',{value:filterAnio,onChange:e=>{setFilterAnio(e.target.value);setPage(1);},className:sel},h('option',{value:""},"Todos los años"),anios.map(a=>h('option',{key:a,value:a},a))),
-              h('select',{value:filterGrado,onChange:e=>{setFilterGrado(e.target.value);setPage(1);},className:sel},h('option',{value:""},"Todos los grados"),grados.map(g=>{const l=GRADO_OPTS.find(o=>o.value===g)?.label||g;return h('option',{key:g,value:g},l);}),hayGradosInvalidos&&h('option',{value:"_INVALID_"},"⚠ Valores de grado inválidos")),
+              h('select',{value:filterGrado,onChange:e=>{setFilterGrado(e.target.value);setFilterGrupo("");setPage(1);},className:sel},h('option',{value:""},"Todos los grados"),grados.map(g=>{const l=GRADO_OPTS.find(o=>o.value===g)?.label||g;return h('option',{key:g,value:g},l);}),hayGradosInvalidos&&h('option',{value:"_INVALID_"},"⚠ Valores de grado inválidos")),
               h('select',{value:filterGrupo,onChange:e=>{setFilterGrupo(e.target.value);setPage(1);},className:sel},h('option',{value:""},"Todos los grupos"),grupos.map(g=>h('option',{key:g,value:g},g))),
               h('select',{value:filterJornada,onChange:e=>{setFilterJornada(e.target.value);setPage(1);},className:sel},h('option',{value:""},"Todas las jornadas"),JORNADA_OPTS.map(j=>h('option',{key:j.value,value:j.value},j.label))),
               h('select',{value:filterEstado,onChange:e=>{setFilterEstado(e.target.value);setPage(1);},className:sel},h('option',{value:""},"Todos los estados"),h('option',{value:"MATRICULADO"},"Matriculado"),h('option',{value:"RETIRADO"},"Retirado")),
