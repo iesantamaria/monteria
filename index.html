@@ -35,7 +35,7 @@
 // → General → tus apps → app web → "Configuración del SDK"
 // ============================================================
 const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyDxh_kHG5LR51rht-QX4foCACjLt7AkV0E",
+   apiKey: "AIzaSyDxh_kHG5LR51rht-QX4foCACjLt7AkV0E",
   authDomain: "iedsantamariamonteria.firebaseapp.com",
   projectId: "iedsantamariamonteria",
   storageBucket: "iedsantamariamonteria.firebasestorage.app",
@@ -241,11 +241,26 @@ function emptyStudent(){const o={};FIELD_DEFS.forEach(f=>{o[f.id]="";});o._id=nu
 function riskCount(s){if(s.ESTADO==="RETIRADO")return -1;return RISK_FIELDS.filter(f=>s[f]==="S").length;}
 function normalizeKey(k){return String(k||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().replace(/\(.*?\)/g,"").replace(/ALT\s*\+?\s*124/g,"").replace(/[¿?]/g,"").replace(/[^A-Z0-9]+/g,"_").replace(/_+/g,"_").replace(/^_|_$/g,"");}
 function matchOption(raw,options){
-  if(!raw)return raw;
+  if(raw===undefined||raw===null||raw==="")return raw;
+  const rawStr=String(raw).trim();
+  let hit=options.find(o=>String(o.value)===rawStr);
+  if(hit)return hit.value;
+  const stripCode=s=>String(s||"").replace(/^-?\d+\s*-\s*/,"");
   const norm=s=>String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().replace(/[^A-Z0-9]+/g,"_").replace(/^_|_$/g,"");
-  const target=norm(raw);
-  const hit=options.find(o=>norm(o.value)===target||norm(o.label)===target);
+  const target=norm(rawStr);
+  hit=options.find(o=>norm(stripCode(o.label))===target);
   return hit?hit.value:raw;
+}
+function toISODate(v){
+  if(v===undefined||v===null||v==="")return "";
+  if(typeof v==="number"){const d=new Date(Math.round((v-25569)*86400*1000));if(!isNaN(d))return d.toISOString().slice(0,10);}
+  const s=String(v).trim();
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s))return s;
+  let m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if(m)return `${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`;
+  m=s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+  if(m)return `${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}`;
+  return s;
 }
 const FIELD_KEY_MAP={};FIELD_DEFS.forEach(f=>{FIELD_KEY_MAP[normalizeKey(f.id)]=f.id;});
 function countBy(arr,fid){const c={};arr.forEach(s=>{const v=s[fid];if(v)c[v]=(c[v]||0)+1;});return Object.entries(c).map(([name,total])=>({name,total}));}
@@ -254,7 +269,7 @@ function matchVal(opts,raw){if(!raw)return "";const tries=[raw,String(raw).padSt
 function resolveLabel(field,value){
   if(!value)return "—";
   if(field.type==="yesno")return value==="S"?"Sí":value==="N"?"No":value;
-  if(field.type==="date"){try{return new Date(value+"T00:00:00").toLocaleDateString("es-CO");}catch{return value;}}
+  if(field.type==="date"){const iso=toISODate(value);try{return new Date(iso+"T00:00:00").toLocaleDateString("es-CO");}catch{return value;}}
   const strip=l=>l&&l.includes(" - ")?l.split(" - ").slice(1).join(" - "):(l||value);
   if(field.type==="multicheck"){return (value||"").split("|").filter(Boolean).map(v=>{const tries=[v,String(v).padStart(2,"0"),String(v).replace(/^0+/,"")];let o;for(const t of tries){o=(field.options||[]).find(x=>(typeof x==="object"?x.value:x)===t);if(o)break;}if(!o)o=(field.options||[]).find(x=>(typeof x==="object"?x.label:x)===v);return strip(o?(typeof o==="object"?o.label:o):v);}).join(", ")||"—";}
   if(field.type==="select"){const opts=field.options||[];const tries=[value,String(value).padStart(2,"0"),String(value).replace(/^0+/,"")];let o;for(const t of tries){o=opts.find(x=>(typeof x==="object"?x.value:x)===t);if(o)break;}if(!o)o=opts.find(x=>(typeof x==="object"?x.label:x)===value);if(!o){const mv=matchOption(value,opts.map(x=>typeof x==="object"?x:{value:x,label:x}));o=opts.find(x=>(typeof x==="object"?x.value:x)===mv);}return strip(o?(typeof o==="object"?o.label:o):value);}
@@ -328,7 +343,7 @@ function FieldRenderer({field,value,onChange,parentValue,disabled}){
   }
   if(field.type==="text") input=h('input',{type:"text",value:value||"",onChange:e=>onChange(filterVal(e.target.value)),className:ic});
   else if(field.type==="number") input=h('input',{type:"text",inputMode:"numeric",value:value||"",onChange:e=>onChange(filterVal(e.target.value.replace(/[^0-9]/g,""))),className:ic});
-  else if(field.type==="date") input=h('input',{type:"date",value:value||"",onChange:e=>onChange(e.target.value),className:ic});
+  else if(field.type==="date") input=h('input',{type:"date",value:toISODate(value)||"",onChange:e=>onChange(e.target.value),className:ic});
   else if(field.type==="textarea") input=h('textarea',{value:value||"",onChange:e=>onChange(filterVal(e.target.value)),rows:3,className:ic});
   else if(field.type==="select"){const nv=matchVal(field.options||[],value);input=h('select',{value:nv,onChange:e=>onChange(e.target.value),className:ic},h('option',{value:""},"Seleccionar..."),ro(field.options||[]));}
   else if(field.type==="yesno") input=h('select',{value:value||"",onChange:e=>onChange(e.target.value),className:ic},h('option',{value:""},"Seleccionar..."),h('option',{value:"S"},"Sí"),h('option',{value:"N"},"No"));
@@ -881,6 +896,7 @@ function App(){
       rows.forEach((row,idx)=>{
         const obj=emptyStudent();Object.keys(row).forEach(k=>{const fid=FIELD_KEY_MAP[normalizeKey(k)];if(fid)obj[fid]=String(row[k]??"").trim();});
         FIELD_DEFS.forEach(f=>{if(f.type==="select"&&f.options&&obj[f.id])obj[f.id]=matchOption(obj[f.id],f.options);});
+        FIELD_DEFS.forEach(f=>{if(f.type==="date"&&obj[f.id])obj[f.id]=toISODate(obj[f.id]);});
         if(!obj.ESTADO)obj.ESTADO="MATRICULADO";
         const doc=(obj.NRO_DOCUMENTO||"").trim();
         const nombre=[obj.NOMBRE1,obj.NOMBRE2,obj.APELLIDO1,obj.APELLIDO2].filter(Boolean).join(" ")||`Fila ${idx+2}`;
