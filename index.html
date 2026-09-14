@@ -35,7 +35,7 @@
 // → General → tus apps → app web → "Configuración del SDK"
 // ============================================================
 const FIREBASE_CONFIG = {
-   apiKey: "AIzaSyDxh_kHG5LR51rht-QX4foCACjLt7AkV0E",
+  apiKey: "AIzaSyDxh_kHG5LR51rht-QX4foCACjLt7AkV0E",
   authDomain: "iedsantamariamonteria.firebaseapp.com",
   projectId: "iedsantamariamonteria",
   storageBucket: "iedsantamariamonteria.firebasestorage.app",
@@ -121,7 +121,7 @@ const DEFAULT_CREDS = {admin:{pass:"admin123",role:"admin"},rector:{pass:"rector
 async function loadCreds(){try{const r=await appStorage.get("app-credentials");if(r?.value)return JSON.parse(r.value);}catch{}return DEFAULT_CREDS;}
 async function saveCreds(c){try{await appStorage.set("app-credentials",JSON.stringify(c));}catch(e){console.error(e);}}
 
-const APP_VERSION="v1.6 - 2026-09-11";
+const APP_VERSION="v1.7 - 2026-09-14";
 const II={nombre:"Nombre de la institución",lema:'"Lema institucional"',licencia:"Licencia de funcionamiento",jornada:"Jornada",dane:"",nit:"",email:"",web:"",dir:"",ciudad:"",shieldUrl:""};
 async function loadInstConfig(){
   if(db){try{const s=await db.collection('config').doc('institucion').get();if(s.exists)Object.assign(II,s.data());}catch(e){console.error(e);}}
