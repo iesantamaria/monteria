@@ -121,7 +121,7 @@ const DEFAULT_CREDS = {admin:{pass:"admin123",role:"admin"},rector:{pass:"rector
 async function loadCreds(){try{const r=await appStorage.get("app-credentials");if(r?.value)return JSON.parse(r.value);}catch{}return DEFAULT_CREDS;}
 async function saveCreds(c){try{await appStorage.set("app-credentials",JSON.stringify(c));}catch(e){console.error(e);}}
 
-const APP_VERSION="v1.7 - 2026-09-14";
+const APP_VERSION="v1.8 - 2026-09-14";
 const II={nombre:"Nombre de la institución",lema:'"Lema institucional"',licencia:"Licencia de funcionamiento",jornada:"Jornada",dane:"",nit:"",email:"",web:"",dir:"",ciudad:"",shieldUrl:""};
 async function loadInstConfig(){
   if(db){try{const s=await db.collection('config').doc('institucion').get();if(s.exists)Object.assign(II,s.data());}catch(e){console.error(e);}}
@@ -260,6 +260,7 @@ function toISODate(v){
   if(m)return `${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`;
   m=s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
   if(m)return `${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}`;
+  if(/^\d{4,6}$/.test(s)){const n=Number(s);if(n>1000&&n<80000){const d=new Date(Math.round((n-25569)*86400*1000));if(!isNaN(d))return d.toISOString().slice(0,10);}}
   return s;
 }
 const FIELD_KEY_MAP={};FIELD_DEFS.forEach(f=>{FIELD_KEY_MAP[normalizeKey(f.id)]=f.id;});
@@ -269,7 +270,7 @@ function matchVal(opts,raw){if(!raw)return "";const tries=[raw,String(raw).padSt
 function resolveLabel(field,value){
   if(!value)return "—";
   if(field.type==="yesno")return value==="S"?"Sí":value==="N"?"No":value;
-  if(field.type==="date"){const iso=toISODate(value);try{return new Date(iso+"T00:00:00").toLocaleDateString("es-CO");}catch{return value;}}
+  if(field.type==="date"){const iso=toISODate(value);if(!iso)return "—";const d=new Date(iso+"T00:00:00");if(isNaN(d))return "—";return d.toLocaleDateString("es-CO");}
   const strip=l=>l&&l.includes(" - ")?l.split(" - ").slice(1).join(" - "):(l||value);
   if(field.type==="multicheck"){return (value||"").split("|").filter(Boolean).map(v=>{const tries=[v,String(v).padStart(2,"0"),String(v).replace(/^0+/,"")];let o;for(const t of tries){o=(field.options||[]).find(x=>(typeof x==="object"?x.value:x)===t);if(o)break;}if(!o)o=(field.options||[]).find(x=>(typeof x==="object"?x.label:x)===v);return strip(o?(typeof o==="object"?o.label:o):v);}).join(", ")||"—";}
   if(field.type==="select"){const opts=field.options||[];const tries=[value,String(value).padStart(2,"0"),String(value).replace(/^0+/,"")];let o;for(const t of tries){o=opts.find(x=>(typeof x==="object"?x.value:x)===t);if(o)break;}if(!o)o=opts.find(x=>(typeof x==="object"?x.label:x)===value);if(!o){const mv=matchOption(value,opts.map(x=>typeof x==="object"?x:{value:x,label:x}));o=opts.find(x=>(typeof x==="object"?x.value:x)===mv);}return strip(o?(typeof o==="object"?o.label:o):value);}
