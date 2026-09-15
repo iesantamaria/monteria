@@ -121,7 +121,7 @@ const DEFAULT_CREDS = {admin:{pass:"admin123",role:"admin"},rector:{pass:"rector
 async function loadCreds(){try{const r=await appStorage.get("app-credentials");if(r?.value)return JSON.parse(r.value);}catch{}return DEFAULT_CREDS;}
 async function saveCreds(c){try{await appStorage.set("app-credentials",JSON.stringify(c));}catch(e){console.error(e);}}
 
-const APP_VERSION="v2.0 - 2026-09-14";
+const APP_VERSION="v2.1 - 2026-09-14";
 const II={nombre:"Nombre de la institución",lema:'"Lema institucional"',licencia:"Licencia de funcionamiento",jornada:"Jornada",dane:"",nit:"",email:"",web:"",dir:"",ciudad:"",shieldUrl:""};
 async function loadInstConfig(){
   if(db){try{const s=await db.collection('config').doc('institucion').get();if(s.exists)Object.assign(II,s.data());}catch(e){console.error(e);}}
@@ -252,8 +252,9 @@ function matchOption(raw,options){
   hit=options.find(o=>norm(stripCode(o.label))===target);
   if(hit)return hit.value;
   if(/^\d+$/.test(rawStr)&&options.every(o=>/^[A-Z]$/.test(String(o.value)))){
-    const n=parseInt(rawStr,10);
-    if(n>=1&&n<=26){
+    const last2=rawStr.slice(-2);
+    const n=parseInt(last2,10);
+    if(!isNaN(n)&&n>=1&&n<=26){
       const letra=String.fromCharCode(64+n);
       hit=options.find(o=>o.value===letra);
       if(hit)return hit.value;
@@ -906,7 +907,7 @@ function App(){
       const seen=new Set();const imported=[],rejected=[];
       rows.forEach((row,idx)=>{
         const obj=emptyStudent();Object.keys(row).forEach(k=>{const fid=FIELD_KEY_MAP[normalizeKey(k)];if(fid)obj[fid]=String(row[k]??"").trim();});
-        if(obj.GRUPO){const n=parseInt(obj.GRUPO.replace(/\D/g,""),10);if(!isNaN(n)&&n>=1&&n<=26&&/^0*\d+$/.test(obj.GRUPO.trim()))obj.GRUPO=String.fromCharCode(64+n);}
+        if(obj.GRUPO){const digits=obj.GRUPO.replace(/\D/g,"");if(digits){const n=parseInt(digits.slice(-2),10);if(!isNaN(n)&&n>=1&&n<=26)obj.GRUPO=String.fromCharCode(64+n);}}
         FIELD_DEFS.forEach(f=>{if(f.type==="select"&&f.options&&obj[f.id])obj[f.id]=matchOption(obj[f.id],f.options);});
         FIELD_DEFS.forEach(f=>{if(f.type==="date"&&obj[f.id])obj[f.id]=toISODate(obj[f.id]);});
         if(!obj.ESTADO)obj.ESTADO="MATRICULADO";
@@ -967,7 +968,7 @@ function App(){
     return(!search||name.includes(search.toLowerCase())||(s.NRO_DOCUMENTO||"").includes(search))
       &&(!filterAnio||s.ANNO_INF===filterAnio)
       &&(!filterGrado||(filterGrado==="_INVALID_"?(s.GRADO&&!GRADO_OPTS.some(o=>o.value===s.GRADO)):s.GRADO===filterGrado))
-      &&(!filterGrupo||s.GRUPO===filterGrupo)
+      &&(!filterGrupo||matchOption(s.GRUPO,GRUPO_OPTS)===filterGrupo)
       &&(!filterJornada||s.JORNADA===filterJornada)
       &&(!filterRiesgo||(filterRiesgo==="alto"&&rc>=3)||(filterRiesgo==="medio"&&rc>=1&&rc<3)||(filterRiesgo==="bajo"&&rc===0))
       &&(!filterFactor||s[filterFactor]==="S")
@@ -976,7 +977,7 @@ function App(){
   const anios=Array.from(new Set(students.map(s=>s.ANNO_INF).filter(Boolean))).sort((a,b)=>Number(b)-Number(a));
   const grados=Array.from(new Set(students.map(s=>s.GRADO).filter(Boolean))).filter(g=>GRADO_OPTS.some(o=>o.value===g)).sort((a,b)=>GRADO_OPTS.findIndex(g=>g.value===a)-GRADO_OPTS.findIndex(g=>g.value===b));
   const hayGradosInvalidos=students.some(s=>s.GRADO&&!GRADO_OPTS.some(o=>o.value===s.GRADO));
-  const grupos=Array.from(new Set(students.filter(s=>!filterGrado||s.GRADO===filterGrado).map(s=>s.GRUPO).filter(Boolean))).sort();
+  const grupos=Array.from(new Set(students.filter(s=>!filterGrado||s.GRADO===filterGrado).map(s=>matchOption(s.GRUPO,GRUPO_OPTS)).filter(Boolean))).sort();
   const totalPages=Math.max(1,Math.ceil(filtered.length/PAGE));
   const curPage=Math.min(page,totalPages);
   const pageItems=filtered.slice((curPage-1)*PAGE,curPage*PAGE);
@@ -1072,7 +1073,7 @@ function App(){
                     h('td',{className:"px-4 py-3 whitespace-nowrap"},s.NRO_DOCUMENTO||"—"),
                     h('td',{className:"px-4 py-3"},[s.NOMBRE1,s.NOMBRE2,s.APELLIDO1,s.APELLIDO2].filter(Boolean).join(" ")||"—"),
                     h('td',{className:"px-4 py-3"},GRADO_OPTS.find(g=>g.value===s.GRADO)?.label?.split(" - ")[1]||s.GRADO||"—"),
-                    h('td',{className:"px-4 py-3"},s.GRUPO||"—"),
+                    h('td',{className:"px-4 py-3"},matchOption(s.GRUPO,GRUPO_OPTS)||"—"),
                     h('td',{className:"px-4 py-3"},s.ANNO_INF||"—"),
                     h('td',{className:"px-4 py-3"},estadoBadge(s.ESTADO)),
                     h('td',{className:"px-4 py-3"},riskBadge(riskCount(s))),
