@@ -121,7 +121,7 @@ const DEFAULT_CREDS = {admin:{pass:"admin123",role:"admin"},rector:{pass:"rector
 async function loadCreds(){try{const r=await appStorage.get("app-credentials");if(r?.value)return JSON.parse(r.value);}catch{}return DEFAULT_CREDS;}
 async function saveCreds(c){try{await appStorage.set("app-credentials",JSON.stringify(c));}catch(e){console.error(e);}}
 
-const APP_VERSION="v1.9 - 2026-09-14";
+const APP_VERSION="v2.0 - 2026-09-14";
 const II={nombre:"Nombre de la institución",lema:'"Lema institucional"',licencia:"Licencia de funcionamiento",jornada:"Jornada",dane:"",nit:"",email:"",web:"",dir:"",ciudad:"",shieldUrl:""};
 async function loadInstConfig(){
   if(db){try{const s=await db.collection('config').doc('institucion').get();if(s.exists)Object.assign(II,s.data());}catch(e){console.error(e);}}
@@ -145,6 +145,7 @@ const TIPO_DOC_OPTS=[{value:"1",label:"1 - Cédula de Ciudadanía"},{value:"2",l
 const TIPO_DOC_FAM_OPTS=[{value:"1",label:"1 - Cédula de Ciudadanía"},{value:"2",label:"2 - Tarjeta de Identidad"},{value:"3",label:"3 - Cédula de Extranjería"},{value:"5",label:"5 - Registro Civil de Nacimiento"},{value:"6",label:"6 - NIP"},{value:"7",label:"7 - NUIP"},{value:"8",label:"8 - Número Secretaría"},{value:"9",label:"9 - Certificado Cabildo"},{value:"10",label:"10 - PEP"},{value:"11",label:"11 - VISA"},{value:"12",label:"12 - TMF"},{value:"13",label:"13 - PPT"}];
 const GRADO_OPTS=[{value:"-2",label:"-2 - Prejardín"},{value:"-1",label:"-1 - Jardín"},{value:"0",label:"0 - Transición"},{value:"1",label:"1 - Primero"},{value:"2",label:"2 - Segundo"},{value:"3",label:"3 - Tercero"},{value:"4",label:"4 - Cuarto"},{value:"5",label:"5 - Quinto"},{value:"6",label:"6 - Sexto"},{value:"7",label:"7 - Séptimo"},{value:"8",label:"8 - Octavo"},{value:"9",label:"9 - Noveno"},{value:"10",label:"10 - Décimo"},{value:"11",label:"11 - Undécimo"},{value:"23",label:"23 - Ciclo 3"},{value:"24",label:"24 - Ciclo 4"},{value:"25",label:"25 - Ciclo 5"},{value:"26",label:"26 - Ciclo 6"}];
 const JORNADA_OPTS=[{value:"MAÑANA",label:"Mañana"},{value:"TARDE",label:"Tarde"},{value:"UNICA",label:"Única"},{value:"NOCTURNA",label:"Nocturna"},{value:"FIN_DE_SEMANA",label:"Fin de Semana"}];
+const GRUPO_OPTS=Array.from({length:12},(_,i)=>({value:String.fromCharCode(65+i),label:String.fromCharCode(65+i)}));
 const VIVIENDA_TIPO_OPTS=[{value:"01",label:"01 - Casa"},{value:"02",label:"02 - Apartamento"},{value:"03",label:"03 - Cuartos"},{value:"04",label:"04 - Otros"}];
 const VIVIENDA_PROP_OPTS=[{value:"01",label:"01 - Propia"},{value:"02",label:"02 - Propia con crédito"},{value:"03",label:"03 - Arriendo"},{value:"04",label:"04 - Usufructo"}];
 const DISCRIM_OPTS=[{value:"01",label:"01 - Discapacidad"},{value:"02",label:"02 - Ritmo de aprendizaje"},{value:"03",label:"03 - Apariencia física"},{value:"04",label:"04 - Religión"},{value:"05",label:"05 - Pertenencia étnica"},{value:"06",label:"06 - Características familiares"},{value:"07",label:"07 - Otras"}];
@@ -173,7 +174,7 @@ const FIELD_DEFS=[
   {id:"NOMBRE1",label:"Primer nombre",type:"text",section:"ident",studentLocked:true,validate:"alpha"},
   {id:"NOMBRE2",label:"Segundo nombre",type:"text",section:"ident",studentLocked:true,validate:"alpha"},
   {id:"GRADO",label:"Grado",type:"select",section:"ident",options:GRADO_OPTS,studentLocked:true},
-  {id:"GRUPO",label:"Grupo",type:"number",section:"ident",studentLocked:true},
+  {id:"GRUPO",label:"Grupo",type:"select",section:"ident",options:GRUPO_OPTS,studentLocked:true},
   {id:"JORNADA",label:"Jornada",type:"select",section:"ident",options:JORNADA_OPTS,studentLocked:true},
   {id:"CODIGO_DANE_SEDE",label:"Código DANE Sede",type:"number",section:"ident",studentLocked:true},
   {id:"NOMBRE_SEDE",label:"Nombre de sede",type:"text",section:"ident",studentLocked:true,validate:"alpha"},
@@ -249,7 +250,16 @@ function matchOption(raw,options){
   const norm=s=>String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().replace(/[^A-Z0-9]+/g,"_").replace(/^_|_$/g,"");
   const target=norm(rawStr);
   hit=options.find(o=>norm(stripCode(o.label))===target);
-  return hit?hit.value:raw;
+  if(hit)return hit.value;
+  if(/^\d+$/.test(rawStr)&&options.every(o=>/^[A-Z]$/.test(String(o.value)))){
+    const n=parseInt(rawStr,10);
+    if(n>=1&&n<=26){
+      const letra=String.fromCharCode(64+n);
+      hit=options.find(o=>o.value===letra);
+      if(hit)return hit.value;
+    }
+  }
+  return raw;
 }
 function toISODate(v){
   if(v===undefined||v===null||v==="")return "";
@@ -896,6 +906,7 @@ function App(){
       const seen=new Set();const imported=[],rejected=[];
       rows.forEach((row,idx)=>{
         const obj=emptyStudent();Object.keys(row).forEach(k=>{const fid=FIELD_KEY_MAP[normalizeKey(k)];if(fid)obj[fid]=String(row[k]??"").trim();});
+        if(obj.GRUPO){const n=parseInt(obj.GRUPO.replace(/\D/g,""),10);if(!isNaN(n)&&n>=1&&n<=26&&/^0*\d+$/.test(obj.GRUPO.trim()))obj.GRUPO=String.fromCharCode(64+n);}
         FIELD_DEFS.forEach(f=>{if(f.type==="select"&&f.options&&obj[f.id])obj[f.id]=matchOption(obj[f.id],f.options);});
         FIELD_DEFS.forEach(f=>{if(f.type==="date"&&obj[f.id])obj[f.id]=toISODate(obj[f.id]);});
         if(!obj.ESTADO)obj.ESTADO="MATRICULADO";
@@ -1054,13 +1065,14 @@ function App(){
             h('div',{className:"bg-white rounded-xl border border-slate-200 overflow-x-auto"},
               h('table',{className:"w-full text-sm"},
                 h('thead',{className:"bg-slate-50 text-slate-500 text-xs uppercase"},
-                  h('tr',null,["Documento","Nombre completo","Grado","Año","Estado","Riesgo","Acciones"].map(t=>h('th',{key:t,className:`text-left px-4 py-3 ${t==="Acciones"?"text-right":""}`},t)))
+                  h('tr',null,["Documento","Nombre completo","Grado","Grupo","Año","Estado","Riesgo","Acciones"].map(t=>h('th',{key:t,className:`text-left px-4 py-3 ${t==="Acciones"?"text-right":""}`},t)))
                 ),
                 h('tbody',null,
                   pageItems.map(s=>h('tr',{key:s._id,className:"border-t border-slate-100 hover:bg-slate-50"},
                     h('td',{className:"px-4 py-3 whitespace-nowrap"},s.NRO_DOCUMENTO||"—"),
                     h('td',{className:"px-4 py-3"},[s.NOMBRE1,s.NOMBRE2,s.APELLIDO1,s.APELLIDO2].filter(Boolean).join(" ")||"—"),
                     h('td',{className:"px-4 py-3"},GRADO_OPTS.find(g=>g.value===s.GRADO)?.label?.split(" - ")[1]||s.GRADO||"—"),
+                    h('td',{className:"px-4 py-3"},s.GRUPO||"—"),
                     h('td',{className:"px-4 py-3"},s.ANNO_INF||"—"),
                     h('td',{className:"px-4 py-3"},estadoBadge(s.ESTADO)),
                     h('td',{className:"px-4 py-3"},riskBadge(riskCount(s))),
@@ -1071,7 +1083,7 @@ function App(){
                       canDelete&&h('button',{onClick:()=>setConfirmDeleteId(s._id),className:"text-rose-500 hover:text-rose-700"},h(Icons.Trash))
                     )
                   )),
-                  filtered.length===0&&h('tr',null,h('td',{colSpan:7,className:"px-4 py-10 text-center text-slate-400"},"No hay estudiantes registrados."))
+                  filtered.length===0&&h('tr',null,h('td',{colSpan:8,className:"px-4 py-10 text-center text-slate-400"},"No hay estudiantes registrados."))
                 )
               )
             ),
