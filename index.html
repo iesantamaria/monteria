@@ -121,7 +121,7 @@ const DEFAULT_CREDS = {admin:{pass:"admin123",role:"admin"},rector:{pass:"rector
 async function loadCreds(){try{const r=await appStorage.get("app-credentials");if(r?.value)return JSON.parse(r.value);}catch{}return DEFAULT_CREDS;}
 async function saveCreds(c){try{await appStorage.set("app-credentials",JSON.stringify(c));}catch(e){console.error(e);}}
 
-const APP_VERSION="v2.1 - 2026-09-14";
+const APP_VERSION="v2.2 - 2026-09-14";
 const II={nombre:"Nombre de la institución",lema:'"Lema institucional"',licencia:"Licencia de funcionamiento",jornada:"Jornada",dane:"",nit:"",email:"",web:"",dir:"",ciudad:"",shieldUrl:""};
 async function loadInstConfig(){
   if(db){try{const s=await db.collection('config').doc('institucion').get();if(s.exists)Object.assign(II,s.data());}catch(e){console.error(e);}}
@@ -216,6 +216,7 @@ const FIELD_DEFS=[
   {id:"RAZON_DESERCION_OTRAS",label:"Otra razón (especifique)",type:"text",section:"desercion",validate:"alpha"},
   {id:"TIPO_DOCUMENTO_FAMILIAR",label:"Tipo de documento (acudiente)",type:"select",section:"familiar",options:TIPO_DOC_FAM_OPTS},
   {id:"NRO_DOCUMENTO_FAMILAIR",label:"Número de documento (acudiente)",type:"text",section:"familiar",validate:"alnum"},
+  {id:"FECHA_NACIMIENTO_FAMILIAR",label:"Fecha de nacimiento (acudiente)",type:"date",section:"familiar"},
   {id:"APELLIDO1_FAMILIAR",label:"Primer apellido (acudiente)",type:"text",section:"familiar",validate:"alpha"},
   {id:"APELLIDO2_FAMILIAR",label:"Segundo apellido (acudiente)",type:"text",section:"familiar",validate:"alpha"},
   {id:"NOMBRE1_FAMILIAR",label:"Primer nombre (acudiente)",type:"text",section:"familiar",validate:"alpha"},
