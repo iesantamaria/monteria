@@ -121,7 +121,7 @@ const DEFAULT_CREDS = {admin:{pass:"admin123",role:"admin"},rector:{pass:"rector
 async function loadCreds(){try{const r=await appStorage.get("app-credentials");if(r?.value)return JSON.parse(r.value);}catch{}return DEFAULT_CREDS;}
 async function saveCreds(c){try{await appStorage.set("app-credentials",JSON.stringify(c));}catch(e){console.error(e);}}
 
-const APP_VERSION="v2.2 - 2026-09-14";
+const APP_VERSION="v2.3 - 2026-09-14";
 const II={nombre:"Nombre de la institución",lema:'"Lema institucional"',licencia:"Licencia de funcionamiento",jornada:"Jornada",dane:"",nit:"",email:"",web:"",dir:"",ciudad:"",shieldUrl:""};
 async function loadInstConfig(){
   if(db){try{const s=await db.collection('config').doc('institucion').get();if(s.exists)Object.assign(II,s.data());}catch(e){console.error(e);}}
@@ -276,6 +276,34 @@ function toISODate(v){
   return s;
 }
 const FIELD_KEY_MAP={};FIELD_DEFS.forEach(f=>{FIELD_KEY_MAP[normalizeKey(f.id)]=f.id;});
+
+// ---- Obligatoriedad y % de completitud ----
+function isFieldRequired(f,data){
+  if(f.adminOnly||f.hidden)return false;
+  if(f.id==="NOMBRE2")return false;
+  if(f.id==="DISCRIMINACION_OTRA")return false;
+  if(f.id==="ASIG_PERIODO_1"||f.id==="ASIG_PERIODO_2")return false;
+  if(f.id==="QUE_DESEA_ESTUDIAR"){const g=Number(data.GRADO);return !isNaN(g)&&g>=8;}
+  if(f.section==="desercion"){
+    if((data.ESTADO||"")!=="RETIRADO")return false;
+    return f.id==="RAZON_DESERCION"||f.id==="CAUSAS"||f.id==="FECHA_RETIRO";
+  }
+  return true;
+}
+function isFieldFilled(f,data){
+  const v=data[f.id];
+  if(f.type==="multicheck")return Array.isArray(v)?v.length>0:!!(v&&String(v).trim());
+  return v!==undefined&&v!==null&&String(v).trim()!=="";
+}
+function sectionMissing(sectionId,data){
+  return FIELD_DEFS.filter(f=>f.section===sectionId&&!f.hidden&&isFieldRequired(f,data)&&!isFieldFilled(f,data));
+}
+function computeCompletion(data){
+  const req=FIELD_DEFS.filter(f=>!f.hidden&&isFieldRequired(f,data));
+  if(!req.length)return 100;
+  const filled=req.filter(f=>isFieldFilled(f,data)).length;
+  return Math.round((filled/req.length)*100);
+}
 function countBy(arr,fid){const c={};arr.forEach(s=>{const v=s[fid];if(v)c[v]=(c[v]||0)+1;});return Object.entries(c).map(([name,total])=>({name,total}));}
 function countMulti(arr,fids){const c={};arr.forEach(s=>{fids.forEach(f=>{(s[f]||"").split("|").filter(Boolean).forEach(v=>{c[v]=(c[v]||0)+1;});});});return Object.entries(c).map(([name,total])=>({name,total})).sort((a,b)=>b.total-a.total);}
 function matchVal(opts,raw){if(!raw)return "";const tries=[raw,String(raw).padStart(2,"0"),String(raw).replace(/^0+/,"")];for(const t of tries){const f=opts.find(o=>(typeof o==="object"?o.value:o)===t);if(f)return typeof f==="object"?f.value:f;}const m=matchOption(raw,opts.map(o=>typeof o==="object"?o:{value:o,label:o}));if(m!==raw)return m;return raw;}
@@ -332,7 +360,7 @@ function Select({value,onChange,options,placeholder="Seleccionar...",className="
   );
 }
 
-function FieldRenderer({field,value,onChange,parentValue,disabled}){
+function FieldRenderer({field,value,onChange,parentValue,disabled,required}){
   const wide=field.type==="textarea"||field.type==="multicheck";
   const ic="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white";
   const ro=opts=>opts.map(o=>{const v=typeof o==="object"?o.value:o;const l=typeof o==="object"?o.label:o;return h('option',{key:v,value:v},l);});
@@ -376,7 +404,7 @@ function FieldRenderer({field,value,onChange,parentValue,disabled}){
   }
 
   return h('div',{className:wide?"md:col-span-2":""},
-    h('label',{className:"block text-xs font-medium text-slate-500 mb-1"},field.label),
+    h('label',{className:"block text-xs font-medium text-slate-500 mb-1"},field.label,required&&h('span',{className:"text-rose-500"}," *")),
     input
   );
 }
@@ -701,6 +729,16 @@ function StudentSelfView({studentId,onLogout}){
   const [error,setError]=useState("");
   const [activeSection,setActiveSection]=useState(0);
   const STUDENT_SECTIONS=SECTIONS.filter(s=>s.id!=="desercion");
+  const completion=data?computeCompletion(data):0;
+  function gotoSection(idx){
+    if(!data)return;
+    if(idx>activeSection){
+      const miss=sectionMissing(STUDENT_SECTIONS[activeSection].id,data);
+      if(miss.length){setError(`Completa los campos obligatorios antes de continuar: ${miss.map(f=>f.label).join(", ")}`);return;}
+    }
+    setError("");
+    setActiveSection(idx);
+  }
 
   useEffect(()=>{
     if(!studentsCol){setError("Base de datos no disponible.");return;}
@@ -750,7 +788,12 @@ function StudentSelfView({studentId,onLogout}){
       h('div',{className:"bg-amber-50 border border-amber-200 text-amber-700 text-sm rounded-lg px-4 py-3"},
         "Actualiza tu información cada año. Tu nombre, documento y tipo de documento no se pueden modificar aquí; si hay un error en esos datos, contacta a la institución."
       ),
-      h('div',{className:"flex gap-1 flex-wrap"},STUDENT_SECTIONS.map((sec,i)=>h('button',{key:sec.id,onClick:()=>setActiveSection(i),className:`px-3 py-1.5 rounded-full text-sm whitespace-nowrap ${activeSection===i?"bg-indigo-600 text-white":"bg-slate-100 text-slate-600 hover:bg-slate-200"}`},sec.label))),
+      h('div',{className:"flex items-center gap-3"},
+        h('div',{className:"flex-1 h-2 bg-slate-200 rounded-full overflow-hidden"},h('div',{className:`h-full rounded-full ${completion>=90?"bg-emerald-500":completion>=50?"bg-amber-500":"bg-rose-500"}`,style:{width:`${completion}%`}})),
+        h('span',{className:"text-xs font-medium text-slate-500 whitespace-nowrap"},`${completion}% completo`)
+      ),
+      h('div',{className:"flex gap-1 flex-wrap"},STUDENT_SECTIONS.map((sec,i)=>{const miss=sectionMissing(sec.id,data);return h('button',{key:sec.id,onClick:()=>gotoSection(i),className:`px-3 py-1.5 rounded-full text-sm whitespace-nowrap flex items-center gap-1 ${activeSection===i?"bg-indigo-600 text-white":miss.length?"bg-rose-50 text-rose-600 border border-rose-200":"bg-slate-100 text-slate-600 hover:bg-slate-200"}`},sec.label,miss.length>0&&h('span',{className:"text-[10px]"},"●"));})),
+      sectionMissing(STUDENT_SECTIONS[activeSection].id,data).length>0&&h('div',{className:"bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-lg px-4 py-2.5"},h('strong',null,"Faltan campos obligatorios: "),sectionMissing(STUDENT_SECTIONS[activeSection].id,data).map(f=>f.label).join(", ")),
       h('div',{className:"bg-sky-50 border border-sky-200 text-sky-700 text-xs rounded-lg px-4 py-2.5 flex items-start gap-2"},
         h(Icons.Info),
         h('span',null,
@@ -762,7 +805,7 @@ function StudentSelfView({studentId,onLogout}){
       h('div',{className:"bg-white rounded-xl border border-slate-200 p-5"},
         h('div',{className:"grid grid-cols-1 md:grid-cols-2 gap-4"},
           FIELD_DEFS.filter(f=>f.section===STUDENT_SECTIONS[activeSection].id&&!f.hidden&&!f.adminOnly).map(f=>
-            h(FieldRenderer,{key:f.id,field:f,value:data[f.id],onChange:v=>hChange(f.id,v),parentValue:f.dependsOn?data[f.dependsOn]:undefined,disabled:!!f.studentLocked})
+            h(FieldRenderer,{key:f.id,field:f,value:data[f.id],onChange:v=>hChange(f.id,v),parentValue:f.dependsOn?data[f.dependsOn]:undefined,disabled:!!f.studentLocked,required:isFieldRequired(f,data)})
           )
         )
       ),
@@ -774,7 +817,7 @@ function StudentSelfView({studentId,onLogout}){
       h('div',{className:"flex justify-between flex-wrap gap-3"},
         h('div',{className:"flex gap-2"},
           h('button',{disabled:activeSection===0,onClick:()=>setActiveSection(s=>s-1),className:"flex items-center gap-1 px-3 py-2 border rounded-lg text-sm disabled:opacity-40"},h(Icons.ChevL),"Anterior"),
-          h('button',{disabled:activeSection===STUDENT_SECTIONS.length-1,onClick:()=>setActiveSection(s=>s+1),className:"flex items-center gap-1 px-3 py-2 border rounded-lg text-sm disabled:opacity-40"},"Siguiente",h(Icons.ChevR))
+          h('button',{disabled:activeSection===STUDENT_SECTIONS.length-1,onClick:()=>gotoSection(activeSection+1),className:"flex items-center gap-1 px-3 py-2 border rounded-lg text-sm disabled:opacity-40"},"Siguiente",h(Icons.ChevR))
         ),
         h('div',{className:"flex gap-2"},
           h('button',{onClick:()=>printCard(data),className:"flex items-center gap-1.5 px-4 py-2 border border-indigo-200 text-indigo-600 rounded-lg text-sm hover:bg-indigo-50"},h(Icons.Print),"Ver mi ficha"),
@@ -802,6 +845,14 @@ function App(){
   const [editingId,setEditingId]=useState(null);
   const [formData,setFormData]=useState(emptyStudent());
   const [activeSection,setActiveSection]=useState(0);
+  const completion=computeCompletion(formData);
+  function gotoSection(idx){
+    if(idx>activeSection){
+      const miss=sectionMissing(SECTIONS[activeSection].id,formData);
+      if(miss.length){showSt(`Completa los campos obligatorios antes de continuar: ${miss.map(f=>f.label).join(", ")}`,true);return;}
+    }
+    setActiveSection(idx);
+  }
   const [statusMsg,setStatusMsg]=useState("");
   const [statusError,setStatusError]=useState(false);
   const [importing,setImporting]=useState(false);
@@ -1067,7 +1118,7 @@ function App(){
             h('div',{className:"bg-white rounded-xl border border-slate-200 overflow-x-auto"},
               h('table',{className:"w-full text-sm"},
                 h('thead',{className:"bg-slate-50 text-slate-500 text-xs uppercase"},
-                  h('tr',null,["Documento","Nombre completo","Grado","Grupo","Año","Estado","Riesgo","Acciones"].map(t=>h('th',{key:t,className:`text-left px-4 py-3 ${t==="Acciones"?"text-right":""}`},t)))
+                  h('tr',null,["Documento","Nombre completo","Grado","Grupo","Año","Estado","Riesgo","%","Acciones"].map(t=>h('th',{key:t,className:`text-left px-4 py-3 ${t==="Acciones"?"text-right":""}`},t)))
                 ),
                 h('tbody',null,
                   pageItems.map(s=>h('tr',{key:s._id,className:"border-t border-slate-100 hover:bg-slate-50"},
@@ -1078,6 +1129,7 @@ function App(){
                     h('td',{className:"px-4 py-3"},s.ANNO_INF||"—"),
                     h('td',{className:"px-4 py-3"},estadoBadge(s.ESTADO)),
                     h('td',{className:"px-4 py-3"},riskBadge(riskCount(s))),
+                    h('td',{className:"px-4 py-3"},(()=>{const c=computeCompletion(s);return h('span',{className:`px-2 py-1 rounded-full text-xs font-medium ${c>=90?"bg-emerald-100 text-emerald-700":c>=50?"bg-amber-100 text-amber-700":"bg-rose-100 text-rose-700"}`},`${c}%`);})()),
                     h('td',{className:"px-4 py-3 text-right whitespace-nowrap"},
                       s.ESTADO==="RETIRADO"&&h('button',{onClick:()=>printRetiro(s),className:"text-rose-500 hover:text-rose-700 mr-2"},h(Icons.File)),
                       h('button',{onClick:()=>setViewingStudent(s),className:"text-slate-400 hover:text-indigo-600 mr-2"},h(Icons.Eye)),
@@ -1085,7 +1137,7 @@ function App(){
                       canDelete&&h('button',{onClick:()=>setConfirmDeleteId(s._id),className:"text-rose-500 hover:text-rose-700"},h(Icons.Trash))
                     )
                   )),
-                  filtered.length===0&&h('tr',null,h('td',{colSpan:8,className:"px-4 py-10 text-center text-slate-400"},"No hay estudiantes registrados."))
+                  filtered.length===0&&h('tr',null,h('td',{colSpan:9,className:"px-4 py-10 text-center text-slate-400"},"No hay estudiantes registrados."))
                 )
               )
             ),
@@ -1154,7 +1206,12 @@ function App(){
               h('h2',{className:"text-lg font-semibold"},editingId?"Editar estudiante":"Nuevo estudiante"),
               h('button',{onClick:()=>setView("list"),className:"text-slate-400 hover:text-slate-600"},h(Icons.X))
             ),
-            h('div',{className:"flex gap-1 overflow-x-auto pb-1"},SECTIONS.map((sec,i)=>h('button',{key:sec.id,onClick:()=>setActiveSection(i),className:`px-3 py-1.5 rounded-full text-sm whitespace-nowrap ${activeSection===i?"bg-indigo-600 text-white":"bg-slate-100 text-slate-600 hover:bg-slate-200"}`},sec.label))),
+            h('div',{className:"flex items-center gap-3"},
+              h('div',{className:"flex-1 h-2 bg-slate-100 rounded-full overflow-hidden"},h('div',{className:`h-full rounded-full ${completion>=90?"bg-emerald-500":completion>=50?"bg-amber-500":"bg-rose-500"}`,style:{width:`${completion}%`}})),
+              h('span',{className:"text-xs font-medium text-slate-500 whitespace-nowrap"},`${completion}% completo`)
+            ),
+            h('div',{className:"flex gap-1 overflow-x-auto pb-1"},SECTIONS.map((sec,i)=>{const miss=sectionMissing(sec.id,formData);return h('button',{key:sec.id,onClick:()=>gotoSection(i),className:`px-3 py-1.5 rounded-full text-sm whitespace-nowrap flex items-center gap-1 ${activeSection===i?"bg-indigo-600 text-white":miss.length?"bg-rose-50 text-rose-600 border border-rose-200":"bg-slate-100 text-slate-600 hover:bg-slate-200"}`},sec.label,miss.length>0&&h('span',{className:"text-[10px]"},"●"));})),
+            sectionMissing(SECTIONS[activeSection].id,formData).length>0&&h('div',{className:"bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-lg px-4 py-2.5"},h('strong',null,"Faltan campos obligatorios en esta pestaña: "),sectionMissing(SECTIONS[activeSection].id,formData).map(f=>f.label).join(", ")),
             formData.ESTADO==="RETIRADO"&&(!formData.RAZON_DESERCION||!formData.CAUSAS)&&h('button',{onClick:()=>setActiveSection(SECTIONS.findIndex(s=>s.id==="desercion")),className:"w-full text-left bg-rose-50 border border-rose-300 text-rose-700 text-sm px-4 py-3 rounded-lg flex items-center gap-2 hover:bg-rose-100"},h(Icons.File),h('span',null,h('strong',null,"Falta información de retiro. "),"Debes completar la razón de deserción y la causa en la pestaña ",h('strong',null,"Retiro / Deserción"),". Clic aquí para ir.")),
             h('div',{className:"bg-white rounded-xl border border-slate-200 p-5"},
               SECTIONS[activeSection].id==="desercion"&&formData.ESTADO!=="RETIRADO"
@@ -1169,13 +1226,13 @@ function App(){
                           ),
                           h('p',{className:"text-[11px] text-slate-400 mt-1"},"Se genera solo al crear el estudiante si lo dejas vacío. Usa \"Generar\" para volver a crearlo si el estudiante lo olvidó.")
                         )
-                      :h(FieldRenderer,{key:f.id,field:f,value:formData[f.id],onChange:v=>hChange(f.id,v),parentValue:f.dependsOn?formData[f.dependsOn]:undefined,disabled:f.adminOnly&&!canManageEstado})
+                      :h(FieldRenderer,{key:f.id,field:f,value:formData[f.id],onChange:v=>hChange(f.id,v),parentValue:f.dependsOn?formData[f.dependsOn]:undefined,disabled:f.adminOnly&&!canManageEstado,required:isFieldRequired(f,formData)})
                   ))
             ),
             h('div',{className:"flex justify-between flex-wrap gap-3"},
               h('div',{className:"flex gap-2"},
                 h('button',{disabled:activeSection===0,onClick:()=>setActiveSection(s=>s-1),className:"flex items-center gap-1 px-3 py-2 border rounded-lg text-sm disabled:opacity-40"},h(Icons.ChevL),"Anterior"),
-                h('button',{disabled:activeSection===SECTIONS.length-1,onClick:()=>setActiveSection(s=>s+1),className:"flex items-center gap-1 px-3 py-2 border rounded-lg text-sm disabled:opacity-40"},"Siguiente",h(Icons.ChevR))
+                h('button',{disabled:activeSection===SECTIONS.length-1,onClick:()=>gotoSection(activeSection+1),className:"flex items-center gap-1 px-3 py-2 border rounded-lg text-sm disabled:opacity-40"},"Siguiente",h(Icons.ChevR))
               ),
               h('button',{onClick:hSave,className:"flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700"},h(Icons.Save),"Guardar estudiante")
             )
