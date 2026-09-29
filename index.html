@@ -121,7 +121,7 @@ const DEFAULT_CREDS = {admin:{pass:"admin123",role:"admin"},rector:{pass:"rector
 async function loadCreds(){try{const r=await appStorage.get("app-credentials");if(r?.value)return JSON.parse(r.value);}catch{}return DEFAULT_CREDS;}
 async function saveCreds(c){try{await appStorage.set("app-credentials",JSON.stringify(c));}catch(e){console.error(e);}}
 
-const APP_VERSION="v2.3 - 2026-09-14";
+const APP_VERSION="v2.4 - 2026-09-14";
 const II={nombre:"Nombre de la institución",lema:'"Lema institucional"',licencia:"Licencia de funcionamiento",jornada:"Jornada",dane:"",nit:"",email:"",web:"",dir:"",ciudad:"",shieldUrl:""};
 async function loadInstConfig(){
   if(db){try{const s=await db.collection('config').doc('institucion').get();if(s.exists)Object.assign(II,s.data());}catch(e){console.error(e);}}
@@ -282,6 +282,9 @@ function isFieldRequired(f,data){
   if(f.adminOnly||f.hidden)return false;
   if(f.id==="NOMBRE2")return false;
   if(f.id==="DISCRIMINACION_OTRA")return false;
+  if(f.id==="DISCRIMINACION")return false;
+  if(f.id==="NOMBRE2_FAMILIAR")return false;
+  if(f.id==="TELEFONO")return false;
   if(f.id==="ASIG_PERIODO_1"||f.id==="ASIG_PERIODO_2")return false;
   if(f.id==="QUE_DESEA_ESTUDIAR"){const g=Number(data.GRADO);return !isNaN(g)&&g>=8;}
   if(f.section==="desercion"){
