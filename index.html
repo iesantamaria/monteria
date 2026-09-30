@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Caracterización Estudiantil</title>
+  <title>Caracterización Estudiantil "SIMPADE"</title>
   <link rel="icon" href="data:,"/>
   <!-- React -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -121,7 +121,7 @@ const DEFAULT_CREDS = {admin:{pass:"admin123",role:"admin"},rector:{pass:"rector
 async function loadCreds(){try{const r=await appStorage.get("app-credentials");if(r?.value)return JSON.parse(r.value);}catch{}return DEFAULT_CREDS;}
 async function saveCreds(c){try{await appStorage.set("app-credentials",JSON.stringify(c));}catch(e){console.error(e);}}
 
-const APP_VERSION="v2.5 - 2026-09-14";
+const APP_VERSION="v2.6 - 2026-09-14";
 const II={nombre:"Nombre de la institución",lema:'"Lema institucional"',licencia:"Licencia de funcionamiento",jornada:"Jornada",dane:"",nit:"",email:"",web:"",dir:"",ciudad:"",shieldUrl:""};
 async function loadInstConfig(){
   if(db){try{const s=await db.collection('config').doc('institucion').get();if(s.exists)Object.assign(II,s.data());}catch(e){console.error(e);}}
@@ -758,6 +758,7 @@ function StudentSelfView({studentId,onLogout}){
 
   async function save(){
     if(!data)return;
+    if(computeCompletion(data)<100){setError("Faltan campos obligatorios por completar. Revisa las pestañas marcadas en rojo.");return;}
     setSaving(true);setError("");
     try{
       // Solo actualiza los campos que el estudiante puede editar; nunca toca identificación, ESTADO ni PIN.
@@ -826,7 +827,7 @@ function StudentSelfView({studentId,onLogout}){
         ),
         h('div',{className:"flex gap-2"},
           h('button',{onClick:()=>printCard(data),className:"flex items-center gap-1.5 px-4 py-2 border border-indigo-200 text-indigo-600 rounded-lg text-sm hover:bg-indigo-50"},h(Icons.Print),"Ver mi ficha"),
-          h('button',{disabled:saving,onClick:save,className:"flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700 disabled:opacity-60"},h(Icons.Save),saving?"Guardando...":"Guardar mi información")
+          h('button',{disabled:saving||completion<100,onClick:save,className:"flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed"},h(Icons.Save),saving?"Guardando...":completion<100?`Completa la información (${completion}%)`:"Guardar mi información")
         )
       )
     )
@@ -907,6 +908,7 @@ function App(){
   function startEdit(s){setFormData(s);setEditingId(s._id);setActiveSection(0);setView("form");}
   async function hSave(){
     if(!canEditStudents){showSt("Tu rol solo tiene permiso de lectura.",true);return;}
+    if(computeCompletion(formData)<100){showSt("Faltan campos obligatorios por completar. Revisa las pestañas marcadas en rojo.",true);return;}
     const id=editingId||`${Date.now()}_${Math.random().toString(36).slice(2)}`;
     if(!formData.PIN){const auto=genPin(formData);if(auto)formData.PIN=auto;}
     const data={...formData,_id:id};
@@ -1239,7 +1241,7 @@ function App(){
                 h('button',{disabled:activeSection===0,onClick:()=>setActiveSection(s=>s-1),className:"flex items-center gap-1 px-3 py-2 border rounded-lg text-sm disabled:opacity-40"},h(Icons.ChevL),"Anterior"),
                 h('button',{disabled:activeSection===SECTIONS.length-1,onClick:()=>gotoSection(activeSection+1),className:"flex items-center gap-1 px-3 py-2 border rounded-lg text-sm disabled:opacity-40"},"Siguiente",h(Icons.ChevR))
               ),
-              h('button',{onClick:hSave,className:"flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700"},h(Icons.Save),"Guardar estudiante")
+              h('button',{disabled:completion<100,onClick:hSave,className:"flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed"},h(Icons.Save),completion<100?`Completa la información (${completion}%)`:"Guardar estudiante")
             )
           ),
 
