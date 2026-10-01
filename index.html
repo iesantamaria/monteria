@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Caracterización Estudiantil "SIMPADE"</title>
+  <title>Caracterización Estudiantil</title>
   <link rel="icon" href="data:,"/>
   <!-- React -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -121,7 +121,7 @@ const DEFAULT_CREDS = {admin:{pass:"admin123",role:"admin"},rector:{pass:"rector
 async function loadCreds(){try{const r=await appStorage.get("app-credentials");if(r?.value)return JSON.parse(r.value);}catch{}return DEFAULT_CREDS;}
 async function saveCreds(c){try{await appStorage.set("app-credentials",JSON.stringify(c));}catch(e){console.error(e);}}
 
-const APP_VERSION="v2.6 - 2026-09-14";
+const APP_VERSION="v2.7 - 2026-09-14";
 const II={nombre:"Nombre de la institución",lema:'"Lema institucional"',licencia:"Licencia de funcionamiento",jornada:"Jornada",dane:"",nit:"",email:"",web:"",dir:"",ciudad:"",shieldUrl:""};
 async function loadInstConfig(){
   if(db){try{const s=await db.collection('config').doc('institucion').get();if(s.exists)Object.assign(II,s.data());}catch(e){console.error(e);}}
@@ -995,7 +995,7 @@ function App(){
   function hExport(){if(!students.length){showSt("No hay registros.",true);return;}const h2=FIELD_DEFS.map(f=>f.id);const rows=students.map(s=>{const r={};h2.forEach(k=>{r[k]=s[k]||"";});return r;});const ws=XLSX.utils.json_to_sheet(rows,{header:h2});const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Estudiantes");XLSX.writeFile(wb,`estudiantes_${new Date().toISOString().slice(0,10)}.xlsx`);showSt("Excel exportado.");}
   function dlS(name,headers,rows){const ws=XLSX.utils.json_to_sheet(rows,{header:headers});Object.keys(ws).forEach(c=>{if(c[0]==="!")return;const x=ws[c];if(x.t==="n"){x.t="s";x.v=String(x.v);delete x.w;}});const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Datos");XLSX.writeFile(wb,`${name}_${new Date().toISOString().slice(0,10)}.xlsx`);showSt("SIMPADE exportado.");}
   function mR(list,h2){return list.map(s=>{const r={};h2.forEach(k=>{r[k]=s[k]||"";});return r;});}
-  function xS1(){const mat=students.filter(s=>s.ESTADO==="MATRICULADO");if(!mat.length){showSt("No hay estudiantes matriculados.",true);return;}const h2=["ANNO_INF","PER_ID","TIPO_DOCUMENTO","NRO_DOCUMENTO","APELLIDO1","APELLIDO2","NOMBRE1","NOMBRE2","EMBARAZO","ABANDONOS_TEMPORALES","REPETIDA_GRADO_ACTUAL","ANTECE_DISC_VIDA_ACA","ASISTENCIA_ANNO_ANTERIOR","ESTRATEGIAS_DEBERIA_TENER"];dlS("1_INFORMACION_NO_MIGRADA_ESTUDIANTE",h2,mR(mat,h2));}
+  function xS1(){const mat=students.filter(s=>s.ESTADO==="MATRICULADO");if(!mat.length){showSt("No hay estudiantes matriculados.",true);return;}const h2=["ANNO_INF","PER_ID","TIPO_DOCUMENTO","NRO_DOCUMENTO","APELLIDO1","APELLIDO2","NOMBRE1","NOMBRE2","EMBARAZO","ABANDONOS_TEMPORALES","REPETIDA_GRADO_ACTUAL","ANTECE_DISC_VIDA_ACA","ASISTENCIA_ANNO_ANTERIOR","ESTRATEGIAS_DEBERIA_TENER","TRABAJA","MAT_PAT_TEMPRANA_EDAD","VICTIMA_DISCRIMINACION","VICTIMA_AGRESIONES","DISCRIMINACION","DISCRIMINACION_OTRA"];dlS("1_INFORMACION_NO_MIGRADA_ESTUDIANTE",h2,mR(mat,h2));}
   function xS2(){const mat=students.filter(s=>s.ESTADO==="MATRICULADO");const h2=["ANNO_INF","PER_ID","TIPO_DOCUMENTO","NRO_DOCUMENTO","APELLIDO1","APELLIDO2","NOMBRE1","NOMBRE2","ASIGNATURA","PERIODO","PERDIO"];const rows=[];mat.forEach(s=>{[["ASIG_PERIODO_1","1"],["ASIG_PERIODO_2","2"]].forEach(([f,p])=>{(s[f]||"").split("|").filter(Boolean).forEach(c=>{rows.push({ANNO_INF:s.ANNO_INF||"",PER_ID:s.PER_ID||"",TIPO_DOCUMENTO:s.TIPO_DOCUMENTO||"",NRO_DOCUMENTO:s.NRO_DOCUMENTO||"",APELLIDO1:s.APELLIDO1||"",APELLIDO2:s.APELLIDO2||"",NOMBRE1:s.NOMBRE1||"",NOMBRE2:s.NOMBRE2||"",ASIGNATURA:c,PERIODO:p,PERDIO:"S"});});});});if(!rows.length){showSt("No hay asignaturas perdidas.",true);return;}dlS("2_CARGUE_ASIGNATURAS_NO_APROBADAS_POR_PERIODO",h2,rows);}
   function xS3(){const mat=students.filter(s=>s.ESTADO==="MATRICULADO");if(!mat.length){showSt("No hay estudiantes matriculados.",true);return;}const h2=["ANNO_INF","PER_ID","TIPO_DOCUMENTO","NRO_DOCUMENTO","APELLIDO1","APELLIDO2","NOMBRE1","NOMBRE2","VIVE_SOLO","EMBARAZO","TRABAJA","MAT_PAT_TEMPRANA_EDAD","VICTIMA_DISCRIMINACION","VICTIMA_AGRESIONES","DISCRIMINACION","DISCRIMINACION_OTRA","TIENE_DEFINIDO_ESTUDIAR","QUE_DESEA_ESTUDIAR","NUMERO_PERSONAS_HOGAR","VIVIENDA_TIPO","VIVIENDA_PROPIEDAD","SERVICIOS_VIVIENDA","EDUCACION_PREESCOLAR","ANOS_EDUCACION_PREESCOLAR","RET_EST_SIN_TERMINAR_ANO_ESC","MESES_POR_FUERA_SIS_EDUCATIVO","ABANDONOS_TEMPORALES","REPETIDA_ANO","VECES_REPETIDA_ANO","REPETIDA_GRADO_ACTUAL","ANTECE_DISC_VIDA_ACA","ASISTENCIA_ANNO_ANTERIOR","DIFICULTADES_APRENDIZAJE","VINCULADO_MOD_EDU_INICIAL","ASIG_PERIODO_1","ASIG_PERIODO_2","ESTRATEGIAS_DEBERIA_TENER"];dlS("3_CARGUE_INFORMACION_COMPLETA_ESTUDIANTE",h2,mR(mat,h2));}
   function xS4(){const ret=students.filter(s=>s.ESTADO==="RETIRADO");if(!ret.length){showSt("No hay retirados.",true);return;}const h2=["ANNO_INF","PER_ID","TIPO_DOCUMENTO","NRO_DOCUMENTO","APELLIDO1","APELLIDO2","NOMBRE1","NOMBRE2","RAZON_DESERCION","CAUSAS","ES_LA_RAZON","RAZON_DESERCION_OTRAS"];dlS("4_CARGUE_RAZONES_DESERCION_ESTUDIANTE",h2,mR(ret,h2));}
