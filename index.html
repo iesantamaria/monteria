@@ -121,7 +121,7 @@ const DEFAULT_CREDS = {admin:{pass:"admin123",role:"admin"},rector:{pass:"rector
 async function loadCreds(){try{const r=await appStorage.get("app-credentials");if(r?.value)return JSON.parse(r.value);}catch{}return DEFAULT_CREDS;}
 async function saveCreds(c){try{await appStorage.set("app-credentials",JSON.stringify(c));}catch(e){console.error(e);}}
 
-const APP_VERSION="v2.8 - 2026-09-14";
+const APP_VERSION="v2.9 - 2026-09-14";
 const II={nombre:"Nombre de la institución",lema:'"Lema institucional"',licencia:"Licencia de funcionamiento",jornada:"Jornada",dane:"",nit:"",email:"",web:"",dir:"",ciudad:"",shieldUrl:""};
 async function loadInstConfig(){
   if(db){try{const s=await db.collection('config').doc('institucion').get();if(s.exists)Object.assign(II,s.data());}catch(e){console.error(e);}}
@@ -844,6 +844,7 @@ function App(){
   const [filterGrado,setFilterGrado]=useState("");
   const [filterGrupo,setFilterGrupo]=useState("");
   const [filterJornada,setFilterJornada]=useState("");
+  const [filterPct,setFilterPct]=useState("");
   const [filterRiesgo,setFilterRiesgo]=useState("");
   const [filterFactor,setFilterFactor]=useState("");
   const [filterEstado,setFilterEstado]=useState("");
@@ -999,21 +1000,40 @@ function App(){
     reader.onerror=()=>{setImporting(false);showSt("Error al leer el archivo.",true);};reader.readAsArrayBuffer(file);e.target.value="";
   }
 
-  function hExport(){if(!students.length){showSt("No hay registros.",true);return;}const h2=FIELD_DEFS.map(f=>f.id);const rows=students.map(s=>{const r={};h2.forEach(k=>{r[k]=s[k]||"";});return r;});const ws=XLSX.utils.json_to_sheet(rows,{header:h2});const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Estudiantes");XLSX.writeFile(wb,`estudiantes_${new Date().toISOString().slice(0,10)}.xlsx`);showSt("Excel exportado.");}
-  function dlS(name,headers,rows){const ws=XLSX.utils.json_to_sheet(rows,{header:headers});Object.keys(ws).forEach(c=>{if(c[0]==="!")return;const x=ws[c];if(x.t==="n"){x.t="s";x.v=String(x.v);delete x.w;}});const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Datos");XLSX.writeFile(wb,`${name}_${new Date().toISOString().slice(0,10)}.xlsx`);showSt("SIMPADE exportado.");}
+  function hExport(){if(!filtered.length){showSt("No hay registros con el filtro actual.",true);return;}const h2=FIELD_DEFS.map(f=>f.id);const rows=filtered.map(s=>{const r={};h2.forEach(k=>{r[k]=s[k]||"";});return r;});const ws=XLSX.utils.json_to_sheet(rows,{header:h2});const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Estudiantes");XLSX.writeFile(wb,`estudiantes_${new Date().toISOString().slice(0,10)}.xlsx`);showSt(`Excel exportado: ${rows.length} estudiante(s) del filtro actual.`);}
+  function dlS(name,headers,rows){const ws=XLSX.utils.json_to_sheet(rows,{header:headers});Object.keys(ws).forEach(c=>{if(c[0]==="!")return;const x=ws[c];if(x.t==="n"){x.t="s";x.v=String(x.v);delete x.w;}});const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Datos");XLSX.writeFile(wb,`${name}_${new Date().toISOString().slice(0,10)}.xlsx`);showSt(`SIMPADE exportado: ${rows.length} registro(s) del filtro actual.`);}
   function mR(list,h2){return list.map(s=>{const r={};h2.forEach(k=>{r[k]=s[k]||"";});return r;});}
-  function xS1(){const mat=students.filter(s=>s.ESTADO==="MATRICULADO");if(!mat.length){showSt("No hay estudiantes matriculados.",true);return;}const h2=["ANNO_INF","PER_ID","TIPO_DOCUMENTO","NRO_DOCUMENTO","APELLIDO1","APELLIDO2","NOMBRE1","NOMBRE2","EMBARAZO","ABANDONOS_TEMPORALES","REPETIDA_GRADO_ACTUAL","ANTECE_DISC_VIDA_ACA","ASISTENCIA_ANNO_ANTERIOR","ESTRATEGIAS_DEBERIA_TENER","TRABAJA","MAT_PAT_TEMPRANA_EDAD","VICTIMA_DISCRIMINACION","VICTIMA_AGRESIONES","DISCRIMINACION","DISCRIMINACION_OTRA"];dlS("1_INFORMACION_NO_MIGRADA_ESTUDIANTE",h2,mR(mat,h2));}
-  function xS2(){const mat=students.filter(s=>s.ESTADO==="MATRICULADO");const h2=["ANNO_INF","PER_ID","TIPO_DOCUMENTO","NRO_DOCUMENTO","APELLIDO1","APELLIDO2","NOMBRE1","NOMBRE2","ASIGNATURA","PERIODO","PERDIO"];const rows=[];mat.forEach(s=>{[["ASIG_PERIODO_1","1"],["ASIG_PERIODO_2","2"]].forEach(([f,p])=>{(s[f]||"").split("|").filter(Boolean).forEach(c=>{rows.push({ANNO_INF:s.ANNO_INF||"",PER_ID:s.PER_ID||"",TIPO_DOCUMENTO:s.TIPO_DOCUMENTO||"",NRO_DOCUMENTO:s.NRO_DOCUMENTO||"",APELLIDO1:s.APELLIDO1||"",APELLIDO2:s.APELLIDO2||"",NOMBRE1:s.NOMBRE1||"",NOMBRE2:s.NOMBRE2||"",ASIGNATURA:c,PERIODO:p,PERDIO:"S"});});});});if(!rows.length){showSt("No hay asignaturas perdidas.",true);return;}dlS("2_CARGUE_ASIGNATURAS_NO_APROBADAS_POR_PERIODO",h2,rows);}
-  function xS3(){const mat=students.filter(s=>s.ESTADO==="MATRICULADO");if(!mat.length){showSt("No hay estudiantes matriculados.",true);return;}const h2=["ANNO_INF","PER_ID","TIPO_DOCUMENTO","NRO_DOCUMENTO","APELLIDO1","APELLIDO2","NOMBRE1","NOMBRE2","VIVE_SOLO","EMBARAZO","TRABAJA","MAT_PAT_TEMPRANA_EDAD","VICTIMA_DISCRIMINACION","VICTIMA_AGRESIONES","DISCRIMINACION","DISCRIMINACION_OTRA","TIENE_DEFINIDO_ESTUDIAR","QUE_DESEA_ESTUDIAR","NUMERO_PERSONAS_HOGAR","VIVIENDA_TIPO","VIVIENDA_PROPIEDAD","SERVICIOS_VIVIENDA","EDUCACION_PREESCOLAR","ANOS_EDUCACION_PREESCOLAR","RET_EST_SIN_TERMINAR_ANO_ESC","MESES_POR_FUERA_SIS_EDUCATIVO","ABANDONOS_TEMPORALES","REPETIDA_ANO","VECES_REPETIDA_ANO","REPETIDA_GRADO_ACTUAL","ANTECE_DISC_VIDA_ACA","ASISTENCIA_ANNO_ANTERIOR","DIFICULTADES_APRENDIZAJE","VINCULADO_MOD_EDU_INICIAL","ASIG_PERIODO_1","ASIG_PERIODO_2","ESTRATEGIAS_DEBERIA_TENER"];dlS("3_CARGUE_INFORMACION_COMPLETA_ESTUDIANTE",h2,mR(mat,h2));}
-  function xS4(){const ret=students.filter(s=>s.ESTADO==="RETIRADO");if(!ret.length){showSt("No hay retirados.",true);return;}const h2=["ANNO_INF","PER_ID","TIPO_DOCUMENTO","NRO_DOCUMENTO","APELLIDO1","APELLIDO2","NOMBRE1","NOMBRE2","RAZON_DESERCION","CAUSAS","ES_LA_RAZON","RAZON_DESERCION_OTRAS"];dlS("4_CARGUE_RAZONES_DESERCION_ESTUDIANTE",h2,mR(ret,h2));}
-  function xS5(){const mat=students.filter(s=>s.ESTADO==="MATRICULADO");if(!mat.length){showSt("No hay estudiantes matriculados.",true);return;}const h2=["ANNO_INF","PER_ID","TIPO_DOCUMENTO","NRO_DOCUMENTO","APELLIDO1","APELLIDO2","NOMBRE1","NOMBRE2","TIPO_DOCUMENTO_FAMILIAR","NRO_DOCUMENTO_FAMILAIR","APELLIDO1_FAMILIAR","APELLIDO2_FAMILIAR","NOMBRE1_FAMILIAR","NOMBRE2_FAMILIAR","NIVEL_EDUCATIVO","ASISTE_REU_DIF_BOLETIN","ASISTE_ENTREGA_INFORMES","TIPO_EMPLEO","FRECUENCIA_CAMBIO_DOMIC"];dlS("5_CARGUE_INFORMACION_FAMILIARES_ESTUDIANTE",h2,mR(mat,h2));}
+  function xS1(){const mat=filtered.filter(s=>s.ESTADO==="MATRICULADO");if(!mat.length){showSt("No hay estudiantes matriculados.",true);return;}const h2=["ANNO_INF","PER_ID","TIPO_DOCUMENTO","NRO_DOCUMENTO","APELLIDO1","APELLIDO2","NOMBRE1","NOMBRE2","EMBARAZO","ABANDONOS_TEMPORALES","REPETIDA_GRADO_ACTUAL","ANTECE_DISC_VIDA_ACA","ASISTENCIA_ANNO_ANTERIOR","ESTRATEGIAS_DEBERIA_TENER","TRABAJA","MAT_PAT_TEMPRANA_EDAD","VICTIMA_DISCRIMINACION","VICTIMA_AGRESIONES","DISCRIMINACION","DISCRIMINACION_OTRA"];dlS("1_INFORMACION_NO_MIGRADA_ESTUDIANTE",h2,mR(mat,h2));}
+  function xS2(){const mat=filtered.filter(s=>s.ESTADO==="MATRICULADO");const h2=["ANNO_INF","PER_ID","TIPO_DOCUMENTO","NRO_DOCUMENTO","APELLIDO1","APELLIDO2","NOMBRE1","NOMBRE2","ASIGNATURA","PERIODO","PERDIO"];const rows=[];mat.forEach(s=>{[["ASIG_PERIODO_1","1"],["ASIG_PERIODO_2","2"]].forEach(([f,p])=>{(s[f]||"").split("|").filter(Boolean).forEach(c=>{rows.push({ANNO_INF:s.ANNO_INF||"",PER_ID:s.PER_ID||"",TIPO_DOCUMENTO:s.TIPO_DOCUMENTO||"",NRO_DOCUMENTO:s.NRO_DOCUMENTO||"",APELLIDO1:s.APELLIDO1||"",APELLIDO2:s.APELLIDO2||"",NOMBRE1:s.NOMBRE1||"",NOMBRE2:s.NOMBRE2||"",ASIGNATURA:c,PERIODO:p,PERDIO:"S"});});});});if(!rows.length){showSt("No hay asignaturas perdidas.",true);return;}dlS("2_CARGUE_ASIGNATURAS_NO_APROBADAS_POR_PERIODO",h2,rows);}
+  function xS3(){const mat=filtered.filter(s=>s.ESTADO==="MATRICULADO");if(!mat.length){showSt("No hay estudiantes matriculados.",true);return;}const h2=["ANNO_INF","PER_ID","TIPO_DOCUMENTO","NRO_DOCUMENTO","APELLIDO1","APELLIDO2","NOMBRE1","NOMBRE2","VIVE_SOLO","EMBARAZO","TRABAJA","MAT_PAT_TEMPRANA_EDAD","VICTIMA_DISCRIMINACION","VICTIMA_AGRESIONES","DISCRIMINACION","DISCRIMINACION_OTRA","TIENE_DEFINIDO_ESTUDIAR","QUE_DESEA_ESTUDIAR","NUMERO_PERSONAS_HOGAR","VIVIENDA_TIPO","VIVIENDA_PROPIEDAD","SERVICIOS_VIVIENDA","EDUCACION_PREESCOLAR","ANOS_EDUCACION_PREESCOLAR","RET_EST_SIN_TERMINAR_ANO_ESC","MESES_POR_FUERA_SIS_EDUCATIVO","ABANDONOS_TEMPORALES","REPETIDA_ANO","VECES_REPETIDA_ANO","REPETIDA_GRADO_ACTUAL","ANTECE_DISC_VIDA_ACA","ASISTENCIA_ANNO_ANTERIOR","DIFICULTADES_APRENDIZAJE","VINCULADO_MOD_EDU_INICIAL","ASIG_PERIODO_1","ASIG_PERIODO_2","ESTRATEGIAS_DEBERIA_TENER"];dlS("3_CARGUE_INFORMACION_COMPLETA_ESTUDIANTE",h2,mR(mat,h2));}
+  function xS4(){const ret=filtered.filter(s=>s.ESTADO==="RETIRADO");if(!ret.length){showSt("No hay retirados.",true);return;}const h2=["ANNO_INF","PER_ID","TIPO_DOCUMENTO","NRO_DOCUMENTO","APELLIDO1","APELLIDO2","NOMBRE1","NOMBRE2","RAZON_DESERCION","CAUSAS","ES_LA_RAZON","RAZON_DESERCION_OTRAS"];dlS("4_CARGUE_RAZONES_DESERCION_ESTUDIANTE",h2,mR(ret,h2));}
+  function xS5(){const mat=filtered.filter(s=>s.ESTADO==="MATRICULADO");if(!mat.length){showSt("No hay estudiantes matriculados.",true);return;}const h2=["ANNO_INF","PER_ID","TIPO_DOCUMENTO","NRO_DOCUMENTO","APELLIDO1","APELLIDO2","NOMBRE1","NOMBRE2","TIPO_DOCUMENTO_FAMILIAR","NRO_DOCUMENTO_FAMILAIR","APELLIDO1_FAMILIAR","APELLIDO2_FAMILIAR","NOMBRE1_FAMILIAR","NOMBRE2_FAMILIAR","NIVEL_EDUCATIVO","ASISTE_REU_DIF_BOLETIN","ASISTE_ENTREGA_INFORMES","TIPO_EMPLEO","FRECUENCIA_CAMBIO_DOMIC"];dlS("5_CARGUE_INFORMACION_FAMILIARES_ESTUDIANTE",h2,mR(mat,h2));}
   function xRiesgo(){
-    const ar=students.filter(s=>riskCount(s)>=1).sort((a,b)=>riskCount(b)-riskCount(a));
+    const ar=filtered.filter(s=>riskCount(s)>=1).sort((a,b)=>riskCount(b)-riskCount(a));
     if(!ar.length){showSt("No hay estudiantes en riesgo.",true);return;}
     const rl=RISK_FIELDS.map(f=>(FIELD_DEFS.find(d=>d.id===f)?.label||f).replace("¿","").replace("?","").trim());
     const h2=["Tipo Documento","Número Documento","Nombre Completo","Grado","Año","Estado","Nivel de Riesgo","Cantidad de Factores",...rl];
     const rows=ar.map(s=>{const rc=riskCount(s);const r={"Tipo Documento":TIPO_DOC_OPTS.find(o=>o.value===s.TIPO_DOCUMENTO)?.label?.split(" - ")[1]||s.TIPO_DOCUMENTO||"","Número Documento":s.NRO_DOCUMENTO||"","Nombre Completo":[s.NOMBRE1,s.NOMBRE2,s.APELLIDO1,s.APELLIDO2].filter(Boolean).join(" "),"Grado":GRADO_OPTS.find(g=>g.value===s.GRADO)?.label?.split(" - ")[1]||s.GRADO||"","Año":s.ANNO_INF||"","Estado":"Matriculado","Nivel de Riesgo":rc>=3?"Alto":"Medio","Cantidad de Factores":rc};RISK_FIELDS.forEach((f,i)=>{r[rl[i]]=s[f]==="S"?"Sí":"No";});return r;});
     dlS("Reporte_Estudiantes_En_Riesgo",h2,rows);
+  }
+
+  function xFaltantes(){
+    const src=filtered.filter(s=>computeCompletion(s)<100);
+    if(!src.length){showSt("No hay estudiantes con información pendiente en el filtro actual.",true);return;}
+    const secLabels=SECTIONS.map(sec=>sec.label);
+    const h2=["Tipo Documento","Número Documento","Nombre Completo","Grado","Grupo","Jornada","Sede","Estado","% Completo","Campos faltantes (cantidad)",...secLabels,"Acudiente","Teléfono acudiente"];
+    const rows=src.map(s=>{
+      const miss=SECTIONS.map(sec=>sectionMissing(sec.id,s));
+      const total=miss.reduce((a,m)=>a+m.length,0);
+      const r={"Tipo Documento":TIPO_DOC_OPTS.find(o=>o.value===s.TIPO_DOCUMENTO)?.label?.split(" - ")[1]||s.TIPO_DOCUMENTO||"","Número Documento":s.NRO_DOCUMENTO||"","Nombre Completo":[s.NOMBRE1,s.NOMBRE2,s.APELLIDO1,s.APELLIDO2].filter(Boolean).join(" "),"Grado":GRADO_OPTS.find(g=>g.value===s.GRADO)?.label?.split(" - ")[1]||s.GRADO||"","Grupo":matchOption(s.GRUPO,GRUPO_OPTS)||"","Jornada":JORNADA_OPTS.find(j=>j.value===matchOption(s.JORNADA,JORNADA_OPTS))?.label||s.JORNADA||"","Sede":s.NOMBRE_SEDE||"","Estado":s.ESTADO==="RETIRADO"?"Retirado":"Matriculado","% Completo":computeCompletion(s)+"%","Campos faltantes (cantidad)":total};
+      SECTIONS.forEach((sec,i)=>{r[sec.label]=miss[i].map(f=>f.label).join(", ");});
+      r["Acudiente"]=[s.NOMBRE1_FAMILIAR,s.NOMBRE2_FAMILIAR,s.APELLIDO1_FAMILIAR,s.APELLIDO2_FAMILIAR].filter(Boolean).join(" ");
+      r["Teléfono acudiente"]=s.TELEFONO||"";
+      r._pct=computeCompletion(s);
+      return r;
+    }).sort((a,b)=>a._pct-b._pct).map(r=>{delete r._pct;return r;});
+    dlS("Reporte_Informacion_Faltante",h2,rows);
+    showSt(`Reporte de faltantes: ${rows.length} estudiante(s) con información pendiente.`);
   }
 
   async function hGenMissingPins(){
@@ -1036,6 +1056,7 @@ function App(){
       &&(!filterGrado||(filterGrado==="_INVALID_"?(s.GRADO&&!GRADO_OPTS.some(o=>o.value===s.GRADO)):s.GRADO===filterGrado))
       &&(!filterGrupo||matchOption(s.GRUPO,GRUPO_OPTS)===filterGrupo)
       &&(!filterJornada||s.JORNADA===filterJornada)
+      &&(!filterPct||(()=>{const cp=computeCompletion(s);return filterPct==="100"?cp>=100:filterPct==="lt100"?cp<100:filterPct==="0-49"?cp<50:filterPct==="50-89"?(cp>=50&&cp<90):filterPct==="90-99"?(cp>=90&&cp<100):true;})())
       &&(!filterRiesgo||(filterRiesgo==="alto"&&rc>=3)||(filterRiesgo==="medio"&&rc>=1&&rc<3)||(filterRiesgo==="bajo"&&rc===0))
       &&(!filterFactor||s[filterFactor]==="S")
       &&(!filterEstado||(s.ESTADO||"MATRICULADO")===filterEstado);
@@ -1047,7 +1068,7 @@ function App(){
   const totalPages=Math.max(1,Math.ceil(filtered.length/PAGE));
   const curPage=Math.min(page,totalPages);
   const pageItems=filtered.slice((curPage-1)*PAGE,curPage*PAGE);
-  const hf=search||filterAnio||filterGrado||filterGrupo||filterJornada||filterRiesgo||filterFactor||filterEstado;
+  const hf=search||filterAnio||filterGrado||filterGrupo||filterJornada||filterPct||filterRiesgo||filterFactor||filterEstado;
   const nb=a=>`px-3 py-1.5 rounded-lg text-sm font-medium transition ${a?"bg-white text-indigo-700":"text-white/90 hover:bg-white/10"}`;
   const btnCls="flex items-center gap-1.5 px-3 py-2 border border-slate-200 rounded-lg text-sm hover:bg-slate-100";
   const sel="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white";
@@ -1107,10 +1128,11 @@ function App(){
               h('select',{value:filterGrado,onChange:e=>{setFilterGrado(e.target.value);setFilterGrupo("");setPage(1);},className:sel},h('option',{value:""},"Todos los grados"),grados.map(g=>{const l=GRADO_OPTS.find(o=>o.value===g)?.label||g;return h('option',{key:g,value:g},l);}),hayGradosInvalidos&&h('option',{value:"_INVALID_"},"⚠ Valores de grado inválidos")),
               h('select',{value:filterGrupo,onChange:e=>{setFilterGrupo(e.target.value);setPage(1);},className:sel},h('option',{value:""},"Todos los grupos"),grupos.map(g=>h('option',{key:g,value:g},g))),
               h('select',{value:filterJornada,onChange:e=>{setFilterJornada(e.target.value);setPage(1);},className:sel},h('option',{value:""},"Todas las jornadas"),JORNADA_OPTS.map(j=>h('option',{key:j.value,value:j.value},j.label))),
+              h('select',{value:filterPct,onChange:e=>{setFilterPct(e.target.value);setPage(1);},className:sel},h('option',{value:""},"Todos los %"),h('option',{value:"100"},"100% (completos)"),h('option',{value:"lt100"},"Incompletos (menos de 100%)"),h('option',{value:"0-49"},"Menos de 50%"),h('option',{value:"50-89"},"50% a 89%"),h('option',{value:"90-99"},"90% a 99%")),
               h('select',{value:filterEstado,onChange:e=>{setFilterEstado(e.target.value);setPage(1);},className:sel},h('option',{value:""},"Todos los estados"),h('option',{value:"MATRICULADO"},"Matriculado"),h('option',{value:"RETIRADO"},"Retirado")),
               h('select',{value:filterRiesgo,onChange:e=>{setFilterRiesgo(e.target.value);setPage(1);},className:sel},h('option',{value:""},"Todos los riesgos"),h('option',{value:"alto"},"🔴 Riesgo alto"),h('option',{value:"medio"},"🟡 Riesgo medio"),h('option',{value:"bajo"},"⚪ Riesgo bajo")),
               h('select',{value:filterFactor,onChange:e=>{setFilterFactor(e.target.value);setPage(1);},className:sel},h('option',{value:""},"Todos los factores"),h('option',{value:"EMBARAZO"},"Embarazo"),h('option',{value:"TRABAJA"},"Trabaja"),h('option',{value:"MAT_PAT_TEMPRANA_EDAD"},"Maternidad/Paternidad"),h('option',{value:"VICTIMA_DISCRIMINACION"},"Discriminación"),h('option',{value:"VICTIMA_AGRESIONES"},"Agresiones"),h('option',{value:"RET_EST_SIN_TERMINAR_ANO_ESC"},"Retiró sin terminar año"),h('option',{value:"REPETIDA_ANO"},"Repitió año"),h('option',{value:"REPETIDA_GRADO_ACTUAL"},"Repite grado actual"),h('option',{value:"DIFICULTADES_APRENDIZAJE"},"Dificultades aprendizaje")),
-              hf&&h('button',{onClick:()=>{setSearch("");setFilterAnio("");setFilterGrado("");setFilterGrupo("");setFilterJornada("");setFilterEstado("");setFilterRiesgo("");setFilterFactor("");setPage(1);},className:"px-3 py-2 text-xs text-rose-600 border border-rose-200 rounded-lg hover:bg-rose-50"},"Limpiar filtros")
+              hf&&h('button',{onClick:()=>{setSearch("");setFilterAnio("");setFilterGrado("");setFilterGrupo("");setFilterJornada("");setFilterPct("");setFilterEstado("");setFilterRiesgo("");setFilterFactor("");setPage(1);},className:"px-3 py-2 text-xs text-rose-600 border border-rose-200 rounded-lg hover:bg-rose-50"},"Limpiar filtros")
             ),
             // BOTONES ACCIÓN
             h('div',{className:"flex gap-2 flex-wrap"},
@@ -1126,6 +1148,7 @@ function App(){
                 )
               ),
               h('button',{onClick:xRiesgo,className:"flex items-center gap-1.5 px-3 py-2 border border-rose-200 bg-rose-50 text-rose-700 rounded-lg text-sm hover:bg-rose-100"},h(Icons.Download),"Reporte de Riesgo"),
+              h('button',{onClick:xFaltantes,className:"flex items-center gap-1.5 px-3 py-2 border border-amber-200 bg-amber-50 text-amber-700 rounded-lg text-sm hover:bg-amber-100"},h(Icons.Download),"Reporte de faltantes"),
               canEditStudents&&h('button',{onClick:startNew,className:"flex items-center gap-1.5 px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700"},h(Icons.Plus),"Nuevo estudiante")
             ),
             // TABLA
